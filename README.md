@@ -34,26 +34,44 @@ mkdir -p /mnt/user/appdata/buyforbub
 chown -R 99:100 /mnt/user/appdata/buyforbub
 ```
 
-**2. Add a stack in Compose Manager** (Docker tab → Compose Manager → Add New
-Stack), and paste in [`docker-compose.yml`](docker-compose.yml). Adjust before
-starting:
+**2. Add the stack in Compose Manager.** If you do not have it yet, install
+*Compose Manager* from Community Applications first.
+
+1. Go to the **Docker** tab. Compose Manager adds an **ADD NEW STACK** button
+   below the container list.
+2. Click it and name the stack `buyforbub`.
+3. Click the **cog icon** next to the new stack → **Edit Stack** → **Compose
+   File**.
+4. Paste in the contents of [`docker-compose.yml`](docker-compose.yml) and save.
+5. Click **COMPOSE UP** on the stack.
+
+Adjust two things in the file before starting:
 
 - `TZ` — set your timezone.
 - The host side of `8080:8080`, if something already uses port 8080.
 
-**3. Start the stack**, then open `http://<your-unraid-ip>:8080`.
+**3. Open `http://<your-unraid-ip>:8080`.**
+
+Compose Manager pulls the image itself, so there is nothing to build on the
+server and no registry login needed.
 
 On first start it creates the database and seeds the default checklist. That
 only happens once — restarts and updates keep your data.
 
 ### Updating
 
+In Compose Manager, use the stack's **UPDATE STACK** action (or **COMPOSE DOWN**
+then **COMPOSE UP**) — it re-pulls `:latest` and recreates the container. Your
+database lives in the bind mount, so it survives.
+
+From a terminal it is the usual:
+
 ```sh
 docker compose pull && docker compose up -d
 ```
 
 Every push to `main` publishes a new `:latest`, plus a `:sha-<commit>` tag if you
-would rather pin.
+would rather pin to a known-good build.
 
 ### Remote access
 
