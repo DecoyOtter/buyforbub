@@ -1,0 +1,21 @@
+.git
+.gitignore
+.github
+.idea
+.vscode
+.DS_Store
+
+docs
+data
+*.db
+*.db-shm
+*.db-wal
+
+# Local build output
+/buyforbub
+
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
+LICENSE

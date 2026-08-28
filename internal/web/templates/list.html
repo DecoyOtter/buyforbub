@@ -1,0 +1,18 @@
+{{define "list"}}<div id="list" class="list">
+  <section class="progress">
+    <p class="progress__text" aria-live="polite">{{.Done}} of {{.Total}} done</p>
+    {{if .Total}}<progress class="progress__bar" value="{{.Done}}" max="{{.Total}}"></progress>{{end}}
+  </section>
+
+  {{range .Groups}}
+  <section class="group">
+    <h2 class="group__title">{{.Category}}</h2>
+    <ul class="items">
+      {{range .Items}}{{template "row" .}}{{end}}
+    </ul>
+  </section>
+  {{else}}
+  <p class="empty">Nothing on the list yet. Add the first thing above.</p>
+  {{end}}
+</div>
+{{end}}

@@ -1,0 +1,29 @@
+# Local planning docs — not tracked
+docs/
+
+# Go
+/buyforbub
+*.exe
+*.test
+*.out
+
+# Delve debug binaries (VS Code / GoLand debugger)
+__debug_bin*
+
+
+# Data / DB
+/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Env
+.env
+
+# Editors — keep shared run configurations, ignore the rest
+.idea/*
+!.idea/runConfigurations/
+.vscode/*
+!.vscode/launch.json
+!.vscode/extensions.json
+.DS_Store

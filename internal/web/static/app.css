@@ -1,0 +1,496 @@
+:root {
+  --bg: #f7f5f2;
+  --surface: #ffffff;
+  --border: #e6e0d8;
+  --track: #e6e0d8;
+  --text: #2e2a26;
+  --muted: #8b8279;
+  --accent: #4f8577;
+  --accent-weak: #e8f0ed;
+  --on-accent: #ffffff;
+  --danger: #b04a40;
+
+  --radius: 12px;
+  --gap: 10px;
+  --tap: 44px;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17191a;
+    --surface: #1e2124;
+    --border: #2f3438;
+    --track: #2f3438;
+    --text: #e8e4df;
+    --muted: #9aa0a4;
+    --accent: #6fae9c;
+    --accent-weak: #22322e;
+    --on-accent: #10201c;
+    --danger: #e0796d;
+
+    color-scheme: dark;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* --- header --- */
+
+.header {
+  padding: calc(env(safe-area-inset-top) + 20px) 16px 12px;
+  text-align: center;
+}
+
+.header__title {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.main {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 0 16px calc(env(safe-area-inset-bottom) + 40px);
+}
+
+/* --- add form --- */
+
+.add {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--gap);
+  margin-bottom: 24px;
+}
+
+.add__name { grid-column: 1 / -1; }
+
+input, select, button { font: inherit; }
+
+input[type="text"], input[type="number"], select {
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.add__qty { width: 4.5rem; }
+
+.add__submit {
+  min-height: var(--tap);
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.add__submit:hover { filter: brightness(1.06); }
+
+/* --- progress --- */
+
+.progress { margin-bottom: 26px; }
+
+.progress__text {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress__bar {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  width: 100%;
+  height: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--track);
+}
+
+.progress__bar::-webkit-progress-bar { background: var(--track); border-radius: 999px; }
+.progress__bar::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
+.progress__bar::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
+
+/* --- groups --- */
+
+.group { margin-bottom: 26px; }
+
+.group__title {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/* --- item --- */
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 0 12px 0 4px;
+  border-top: 1px solid var(--border);
+}
+
+.item:first-child { border-top: 0; }
+
+/* A 24px circle drawn inside a 44px button, so the tap target stays thumb-sized
+   without the control looking heavy. */
+.item__check {
+  position: relative;
+  flex: none;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.item__check::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+}
+
+/* CSS-drawn tick, revealed once the item is bought. */
+.item__check::after {
+  content: "";
+  position: absolute;
+  top: 15px;
+  left: 19px;
+  width: 5px;
+  height: 10px;
+  border: solid transparent;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.item.is-bought .item__check::before {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.item.is-bought .item__check::after { border-color: var(--on-accent); }
+
+.item__open {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  min-height: var(--tap);
+  padding: 11px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.item__qty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.item__notes {
+  flex-basis: 100%;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.item.is-bought .item__name {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.item.is-bought .item__qty,
+.item.is-bought .item__notes { opacity: 0.65; }
+
+.item__links {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.item.is-bought .item__links { opacity: 0.6; }
+
+/* --- detail panel --- */
+
+.item.is-open {
+  display: block;
+  padding: 0;
+  background: var(--accent-weak);
+}
+
+.detail { padding: 4px 12px 14px; }
+
+.detail__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin-left: -8px;
+}
+
+.detail__title {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  padding: 12px 0;
+}
+
+.detail__close {
+  flex: none;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.detail__actions {
+  display: flex;
+  gap: var(--gap);
+  margin-top: 14px;
+}
+
+/* --- options --- */
+
+.options { margin-top: 4px; }
+
+.options__list {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.options__empty {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.option:first-child { border-top: 0; }
+
+.option__link {
+  flex: 1;
+  min-width: 8rem;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.option__price {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.option__choose {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: none;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.option__badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.option.is-chosen .option__link { font-weight: 600; }
+
+.option__remove {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.option-add {
+  display: grid;
+  grid-template-columns: 1fr 5.5rem auto;
+  gap: 8px;
+}
+
+.option-add__url { grid-column: 1 / -1; }
+
+.option-add input {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.option-add__submit {
+  min-height: 38px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* --- edit form --- */
+
+.edit {
+  display: grid;
+  grid-template-columns: 1fr 5rem;
+  gap: var(--gap);
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.edit__field { display: grid; gap: 4px; }
+
+/* Form controls carry an intrinsic min-width that would otherwise overflow a
+   narrow grid track. */
+.edit__field input,
+.edit__field select {
+  width: 100%;
+  min-width: 0;
+}
+
+.edit__field > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.edit__field--category,
+.edit__field--notes { grid-column: 1 / -1; }
+
+.edit__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: var(--gap);
+  margin-top: 4px;
+}
+
+.btn {
+  min-height: var(--tap);
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.btn--quiet {
+  background: none;
+}
+
+.btn--danger {
+  margin-left: auto;
+  border-color: transparent;
+  background: none;
+  color: var(--danger);
+}
+
+/* --- misc --- */
+
+.empty {
+  padding: 28px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  text-align: center;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Wide enough for the add form to fit on one row. Below this the name input
+   takes its own row — four columns need ~600px before they start overflowing. */
+@media (min-width: 600px) {
+  .add { grid-template-columns: 1fr 9rem 4.5rem auto; }
+  .add__name { grid-column: auto; }
+}

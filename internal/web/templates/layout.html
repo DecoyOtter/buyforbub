@@ -1,0 +1,38 @@
+{{define "page"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{.Title}}</title>
+<meta name="theme-color" content="#f7f5f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17191a" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="{{.Title}}">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+<header class="header">
+  <h1 class="header__title">{{.Title}}</h1>
+</header>
+
+<main class="main">
+  <form class="add" hx-post="/items" hx-target="#list" hx-swap="outerHTML"
+        hx-on::after-request="if (event.detail.successful) { this.reset(); this.querySelector('input[name=name]').focus(); }">
+    <input class="add__name" type="text" name="name" placeholder="Add an item" required
+           autocomplete="off" aria-label="Item name">
+    <select class="add__category" name="category" aria-label="Category">
+      {{range .Categories}}<option value="{{.}}">{{.}}</option>{{end}}
+    </select>
+    <input class="add__qty" type="number" name="qty" value="1" min="1" step="1" aria-label="Quantity">
+    <button class="add__submit" type="submit">Add</button>
+  </form>
+
+  {{template "list" .List}}
+</main>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,26 @@
+{{define "edit"}}<form class="edit" hx-post="/items/{{.Item.ID}}" hx-target="#list" hx-swap="outerHTML">
+  <label class="edit__field edit__field--name">
+    <span>Name</span>
+    <input type="text" name="name" value="{{.Item.Name}}" required autocomplete="off">
+  </label>
+  <label class="edit__field edit__field--qty">
+    <span>Qty</span>
+    <input type="number" name="qty" value="{{.Item.Qty}}" min="1" step="1">
+  </label>
+  <label class="edit__field edit__field--category">
+    <span>Category</span>
+    <select name="category">
+      {{range .Categories}}<option value="{{.}}"{{if eq . $.Item.Category}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+  </label>
+  <label class="edit__field edit__field--notes">
+    <span>Notes</span>
+    <input type="text" name="notes" value="{{.Item.Notes}}" autocomplete="off">
+  </label>
+  <div class="edit__actions">
+    <button class="btn btn--primary" type="submit">Save</button>
+    <button class="btn" type="button"
+            hx-get="/items/{{.Item.ID}}" hx-target="#item-{{.Item.ID}}" hx-swap="outerHTML">Cancel</button>
+  </div>
+</form>
+{{end}}

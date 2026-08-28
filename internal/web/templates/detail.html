@@ -1,0 +1,53 @@
+{{define "detail"}}<li id="item-{{.Item.ID}}" class="item is-open{{if .Item.Bought}} is-bought{{end}}">
+  <div class="detail">
+    <div class="detail__head">
+      <button class="item__check" type="button"
+              hx-post="/items/{{.Item.ID}}/toggle" hx-target="#list" hx-swap="outerHTML"
+              aria-pressed="{{.Item.Bought}}"
+              aria-label="Mark {{.Item.Name}} as {{if .Item.Bought}}still needed{{else}}bought{{end}}"></button>
+      <div class="detail__title">
+        <span class="item__name">{{.Item.Name}}</span>
+        {{if gt .Item.Qty 1}}<span class="item__qty">&times;{{.Item.Qty}}</span>{{end}}
+        {{if .Item.Notes}}<span class="item__notes">{{.Item.Notes}}</span>{{end}}
+      </div>
+      <button class="detail__close" type="button"
+              hx-get="/items/{{.Item.ID}}/row" hx-target="#item-{{.Item.ID}}" hx-swap="outerHTML"
+              aria-label="Close {{.Item.Name}}">&times;</button>
+    </div>
+
+    {{if .Editing}}{{template "edit" .}}{{end}}
+
+    <section class="options">
+      {{if .Options}}
+      <ul class="options__list">
+        {{range .Options}}{{template "option" .}}{{end}}
+      </ul>
+      {{else}}
+      <p class="options__empty">No options yet — paste a link below to start comparing.</p>
+      {{end}}
+
+      <form class="option-add"
+            hx-post="/items/{{.Item.ID}}/options" hx-target="#item-{{.Item.ID}}" hx-swap="outerHTML"
+            hx-on::after-request="if (event.detail.successful) { this.reset(); this.querySelector('input[name=url]').focus(); }">
+        <input class="option-add__url" type="text" name="url" placeholder="Paste a link" required
+               autocomplete="off" aria-label="Link">
+        <input class="option-add__label" type="text" name="label" placeholder="Label (optional)"
+               autocomplete="off" aria-label="Label">
+        <input class="option-add__price" type="text" name="price" placeholder="Price"
+               inputmode="decimal" autocomplete="off" aria-label="Price">
+        <button class="option-add__submit" type="submit">Add</button>
+      </form>
+    </section>
+
+    {{if not .Editing}}
+    <div class="detail__actions">
+      <button class="btn btn--quiet" type="button"
+              hx-get="/items/{{.Item.ID}}/edit" hx-target="#item-{{.Item.ID}}" hx-swap="outerHTML">Edit item</button>
+      <button class="btn btn--danger" type="button"
+              hx-post="/items/{{.Item.ID}}/delete" hx-target="#list" hx-swap="outerHTML"
+              hx-confirm="Delete {{.Item.Name}}?">Delete item</button>
+    </div>
+    {{end}}
+  </div>
+</li>
+{{end}}

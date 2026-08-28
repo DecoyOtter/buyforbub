@@ -1,0 +1,15 @@
+{{define "option"}}<li class="option{{if .Chosen}} is-chosen{{end}}">
+  <a class="option__link" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Title}}</a>
+  {{if .PriceText}}<span class="option__price">{{.PriceText}}</span>{{end}}
+  {{if .Chosen}}
+  <span class="option__badge">Bought this</span>
+  {{else}}
+  <button class="option__choose" type="button"
+          hx-post="/options/{{.ID}}/choose" hx-target="#list" hx-swap="outerHTML"
+          aria-label="Mark {{.Title}} as the one bought">Choose</button>
+  {{end}}
+  <button class="option__remove" type="button"
+          hx-post="/options/{{.ID}}/delete" hx-target="#item-{{.ItemID}}" hx-swap="outerHTML"
+          aria-label="Remove {{.Title}}">&times;</button>
+</li>
+{{end}}

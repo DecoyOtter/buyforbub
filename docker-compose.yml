@@ -1,0 +1,28 @@
+services:
+  buyforbub:
+    image: ghcr.io/decoyotter/buyforbub:latest
+    container_name: buyforbub
+    restart: unless-stopped
+
+    # Unraid's nobody:users. This MUST match the owner of the appdata directory
+    # below, or the app cannot create its database. Before the first start:
+    #   mkdir -p /mnt/user/appdata/buyforbub
+    #   chown -R 99:100 /mnt/user/appdata/buyforbub
+    user: "99:100"
+
+    ports:
+      - "8080:8080"
+
+    volumes:
+      - /mnt/user/appdata/buyforbub:/data
+
+    environment:
+      TZ: Australia/Sydney
+      APP_TITLE: Buy for Bub
+
+    healthcheck:
+      test: ["CMD", "/buyforbub", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
