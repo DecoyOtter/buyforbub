@@ -69,6 +69,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /items/{id}/options", s.handleAddOption)
 	s.mux.HandleFunc("POST /options/{oid}/choose", s.handleChooseOption)
 	s.mux.HandleFunc("POST /options/{oid}/delete", s.handleDeleteOption)
+	s.mux.HandleFunc("POST /options/{oid}/comments", s.handleAddComment)
+	s.mux.HandleFunc("POST /comments/{cid}/delete", s.handleDeleteComment)
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.Handle("GET /static/", s.static)
 }
@@ -90,9 +92,16 @@ type listData struct {
 // detailData backs the expanded panel, and the edit form nested inside it.
 type detailData struct {
 	Item       store.Item
-	Options    []store.Option
+	Options    []optionView
 	Categories []string
 	Editing    bool
+}
+
+// optionView is an option with its comments attached, since the store returns
+// the two separately.
+type optionView struct {
+	store.Option
+	Comments []store.Comment
 }
 
 // --- handlers ---
@@ -249,6 +258,52 @@ func (s *Server) handleChooseOption(w http.ResponseWriter, r *http.Request) {
 	s.renderList(w, r)
 }
 
+func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "oid")
+	if !ok {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.fail(w, r, errBadRequest)
+		return
+	}
+	c, err := s.store.AddComment(r.Context(), id, r.PostFormValue("body"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	// The option knows which item's panel to re-render.
+	opt, err := s.store.GetOption(r.Context(), c.OptionID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderDetail(w, r, opt.ItemID, false)
+}
+
+func (s *Server) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "cid")
+	if !ok {
+		return
+	}
+	// Read it first, so the panel can be re-rendered for the right item.
+	c, err := s.store.GetComment(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	opt, err := s.store.GetOption(r.Context(), c.OptionID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.store.DeleteComment(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderDetail(w, r, opt.ItemID, false)
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Write([]byte("ok"))
@@ -276,9 +331,19 @@ func (s *Server) renderDetail(w http.ResponseWriter, r *http.Request, id int64, 
 		s.fail(w, r, err)
 		return
 	}
+	comments, err := s.store.CommentsByOption(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	views := make([]optionView, 0, len(opts))
+	for _, o := range opts {
+		views = append(views, optionView{Option: o, Comments: comments[o.ID]})
+	}
 	s.render(w, r, http.StatusOK, "detail", detailData{
 		Item:       item,
-		Options:    opts,
+		Options:    views,
 		Categories: store.Categories,
 		Editing:    editing,
 	})
@@ -349,6 +414,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "That does not look like a link.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidPrice):
 		http.Error(w, "Price should be a number.", http.StatusBadRequest)
+	case errors.Is(err, store.ErrInvalidComment):
+		http.Error(w, "Write something first.", http.StatusBadRequest)
 	case errors.Is(err, errBadRequest):
 		http.Error(w, "Bad request.", http.StatusBadRequest)
 	default:

@@ -375,6 +375,75 @@ input[type="text"], input[type="number"], select {
   cursor: pointer;
 }
 
+/* --- comments --- */
+
+/* Sits on its own line under the option, which is a wrapping flex row. */
+.comments {
+  flex-basis: 100%;
+  min-width: 0;
+  margin: 2px 8px 2px 0;
+}
+
+.comment {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.comment__body {
+  flex: 1;
+  color: var(--muted);
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+}
+
+.comment__body::before {
+  content: "— ";
+  color: var(--border);
+}
+
+.comment__age {
+  color: var(--muted);
+  font-size: 0.7rem;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hidden until wanted, so a list of comments stays quiet. */
+.comment__remove {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.comment:hover .comment__remove,
+.comment__remove:focus-visible { opacity: 1; }
+
+.comment-add { margin-top: 4px; }
+
+.comment-add input {
+  width: 100%;
+  min-height: 30px;
+  padding: 0 0 0 2px;
+  border: 0;
+  border-bottom: 1px dashed var(--border);
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 0.84rem;
+}
+
+.comment-add input::placeholder { color: var(--muted); opacity: 0.75; }
+
 .option-add {
   display: grid;
   grid-template-columns: 1fr 5.5rem auto;

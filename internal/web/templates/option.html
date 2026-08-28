@@ -11,5 +11,23 @@
   <button class="option__remove" type="button"
           hx-post="/options/{{.ID}}/delete" hx-target="#item-{{.ItemID}}" hx-swap="outerHTML"
           aria-label="Remove {{.Title}}">&times;</button>
+
+  <div class="comments">
+    {{range .Comments}}
+    <div class="comment">
+      <span class="comment__body">{{.Body}}</span>
+      <span class="comment__age">{{.Age}}</span>
+      <button class="comment__remove" type="button"
+              hx-post="/comments/{{.ID}}/delete" hx-target="#item-{{$.ItemID}}" hx-swap="outerHTML"
+              aria-label="Remove comment">&times;</button>
+    </div>
+    {{end}}
+    <form class="comment-add"
+          hx-post="/options/{{.ID}}/comments" hx-target="#item-{{.ItemID}}" hx-swap="outerHTML"
+          hx-on::after-request="if (event.detail.successful) this.reset();">
+      <input type="text" name="body" placeholder="Add a comment" required
+             autocomplete="off" aria-label="Comment on {{.Title}}">
+    </form>
+  </div>
 </li>
 {{end}}

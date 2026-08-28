@@ -21,3 +21,13 @@ CREATE TABLE IF NOT EXISTS options (
 );
 
 CREATE INDEX IF NOT EXISTS options_by_item ON options(item_id);
+
+-- Remarks recorded against an option while it is being weighed up.
+CREATE TABLE IF NOT EXISTS comments (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    option_id  INTEGER NOT NULL REFERENCES options(id) ON DELETE CASCADE,
+    body       TEXT    NOT NULL,
+    created_at TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS comments_by_option ON comments(option_id);
