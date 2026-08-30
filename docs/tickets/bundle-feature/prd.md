@@ -74,19 +74,19 @@
 
 **Details:**
 * **Priority:** 4
-* **Passes:** `false`
+* **Passes:** `true`
 * **Notes:** *None*
 
 **Acceptance Criteria:**
-* [ ] Editing validates the same fields and minimum membership as creation
-* [ ] Name, URL, price, regular price, membership, and Component label changes propagate transactionally
-* [ ] Existing members retain position; newly added members append in checklist order
-* [ ] Price or membership changes recalculate every share and preserve the exact Bundle total
-* [ ] Removing a member deletes its generated Bundle Option and Option Comments while preserving Bundle Comments
-* [ ] Editing any field on a chosen Bundle first unchooses every member Option and marks every member Item needed
-* [ ] Failed edits leave the Bundle, Options, Comments, allocations, and Item Statuses unchanged
-* [ ] Tests pass
-* [ ] Typecheck passes
+* [x] Editing validates the same fields and minimum membership as creation
+* [x] Name, URL, price, regular price, membership, and Component label changes propagate transactionally
+* [x] Existing members retain position; newly added members append in checklist order
+* [x] Price or membership changes recalculate every share and preserve the exact Bundle total
+* [x] Removing a member deletes its generated Bundle Option and Option Comments while preserving Bundle Comments
+* [x] Editing any field on a chosen Bundle first unchooses every member Option and marks every member Item needed
+* [x] Failed edits leave the Bundle, Options, Comments, allocations, and Item Statuses unchanged
+* [x] Tests pass
+* [x] Typecheck passes
 
 ### US-005: Delete Bundles and handle Item deletion
 

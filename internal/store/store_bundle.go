@@ -75,6 +75,172 @@ func (s *Store) AddBundle(ctx context.Context, in BundleInput) (Bundle, error) {
 	return s.GetBundle(ctx, bundleID)
 }
 
+// UpdateBundle replaces a bundle's details and member list.
+func (s *Store) UpdateBundle(ctx context.Context, id int64, in BundleInput) (Bundle, error) {
+	c, err := in.clean()
+	if err != nil {
+		return Bundle{}, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Bundle{}, fmt.Errorf("update bundle: %w", err)
+	}
+	defer tx.Rollback()
+
+	var found int
+	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM bundles WHERE id = ?`, id).Scan(&found); errors.Is(err, sql.ErrNoRows) {
+		return Bundle{}, ErrNotFound
+	} else if err != nil {
+		return Bundle{}, fmt.Errorf("update bundle: %w", err)
+	}
+
+	existing, err := listBundleMembersTx(ctx, tx, id)
+	if err != nil {
+		return Bundle{}, err
+	}
+	inputByItem := make(map[int64]BundleMemberInput, len(c.members))
+	for _, member := range c.members {
+		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM items WHERE id = ?`, member.ItemID).Scan(&found); errors.Is(err, sql.ErrNoRows) {
+			return Bundle{}, ErrNotFound
+		} else if err != nil {
+			return Bundle{}, fmt.Errorf("update bundle: %w", err)
+		}
+		inputByItem[member.ItemID] = member
+	}
+
+	chosen := false
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM bundle_members bm JOIN options o ON o.id = bm.option_id WHERE bm.bundle_id = ? AND o.chosen = 1)`, id).Scan(&chosen); err != nil {
+		return Bundle{}, fmt.Errorf("update bundle: %w", err)
+	}
+	if chosen {
+		if _, err := tx.ExecContext(ctx, `UPDATE options SET chosen = 0 WHERE id IN (SELECT option_id FROM bundle_members WHERE bundle_id = ?)`, id); err != nil {
+			return Bundle{}, fmt.Errorf("update bundle: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE items SET status = ? WHERE id IN (SELECT item_id FROM bundle_members WHERE bundle_id = ?)`, StatusNeeded, id); err != nil {
+			return Bundle{}, fmt.Errorf("update bundle: %w", err)
+		}
+	}
+
+	retained := make([]BundleMember, 0, len(existing))
+	for _, member := range existing {
+		if _, ok := inputByItem[member.ItemID]; ok {
+			retained = append(retained, member)
+			delete(inputByItem, member.ItemID)
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM options WHERE id = ?`, member.OptionID); err != nil {
+			return Bundle{}, fmt.Errorf("update bundle: %w", err)
+		}
+	}
+
+	newItems, err := checklistOrderedItems(ctx, tx, inputByItem)
+	if err != nil {
+		return Bundle{}, err
+	}
+	members := make([]BundleMember, 0, len(c.members))
+	members = append(members, retained...)
+	nextPosition := 0
+	for _, member := range retained {
+		if member.Position >= nextPosition {
+			nextPosition = member.Position + 1
+		}
+	}
+	for _, itemID := range newItems {
+		members = append(members, BundleMember{ItemID: itemID, Position: nextPosition})
+		nextPosition++
+	}
+
+	if _, err := tx.ExecContext(ctx, `UPDATE bundles SET name = ?, url = ?, price_cents = ?, regular_price_cents = ? WHERE id = ?`, c.name, c.url, c.priceCents, c.regularPriceCents, id); err != nil {
+		return Bundle{}, fmt.Errorf("update bundle: %w", err)
+	}
+	share, remainder := c.priceCents/int64(len(members)), c.priceCents%int64(len(members))
+	for i, member := range members {
+		input := findBundleMemberInput(c.members, member.ItemID)
+		price := share
+		if int64(i) < remainder {
+			price++
+		}
+		if member.ID == 0 {
+			option, err := tx.ExecContext(ctx, `INSERT INTO options (item_id, url, label, price_cents, chosen, created_at) VALUES (?, ?, ?, ?, 0, ?)`, member.ItemID, c.url, input.ComponentLabel, price, formatTime(time.Now().UTC()))
+			if err != nil {
+				return Bundle{}, fmt.Errorf("update bundle: %w", err)
+			}
+			optionID, err := option.LastInsertId()
+			if err != nil {
+				return Bundle{}, fmt.Errorf("update bundle: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO bundle_members (bundle_id, item_id, option_id, position, component_label) VALUES (?, ?, ?, ?, ?)`, id, member.ItemID, optionID, member.Position, input.ComponentLabel); err != nil {
+				return Bundle{}, fmt.Errorf("update bundle: %w", err)
+			}
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE bundle_members SET component_label = ? WHERE id = ?`, input.ComponentLabel, member.ID); err != nil {
+			return Bundle{}, fmt.Errorf("update bundle: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE options SET url = ?, label = ?, price_cents = ? WHERE id = ?`, c.url, input.ComponentLabel, price, member.OptionID); err != nil {
+			return Bundle{}, fmt.Errorf("update bundle: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return Bundle{}, fmt.Errorf("update bundle: %w", err)
+	}
+	return s.GetBundle(ctx, id)
+}
+
+func listBundleMembersTx(ctx context.Context, tx *sql.Tx, bundleID int64) ([]BundleMember, error) {
+	rows, err := tx.QueryContext(ctx, selectBundleMemberColumns+` WHERE bundle_id = ? ORDER BY position`, bundleID)
+	if err != nil {
+		return nil, fmt.Errorf("update bundle: %w", err)
+	}
+	defer rows.Close()
+	var members []BundleMember
+	for rows.Next() {
+		var member BundleMember
+		if err := rows.Scan(&member.ID, &member.BundleID, &member.ItemID, &member.OptionID, &member.Position, &member.ComponentLabel); err != nil {
+			return nil, fmt.Errorf("update bundle: scan member: %w", err)
+		}
+		members = append(members, member)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("update bundle: %w", err)
+	}
+	return members, nil
+}
+
+func checklistOrderedItems(ctx context.Context, tx *sql.Tx, wanted map[int64]BundleMemberInput) ([]int64, error) {
+	if len(wanted) == 0 {
+		return nil, nil
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM items ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("update bundle: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("update bundle: %w", err)
+		}
+		if _, ok := wanted[id]; ok {
+			ids = append(ids, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("update bundle: %w", err)
+	}
+	return ids, nil
+}
+
+func findBundleMemberInput(members []BundleMemberInput, itemID int64) BundleMemberInput {
+	for _, member := range members {
+		if member.ItemID == itemID {
+			return member
+		}
+	}
+	return BundleMemberInput{}
+}
+
 // GetBundle returns a Bundle and its members in stable position order.
 func (s *Store) GetBundle(ctx context.Context, id int64) (Bundle, error) {
 	b, err := scanBundle(s.db.QueryRowContext(ctx, selectBundleColumns+` WHERE id = ?`, id))

@@ -174,6 +174,84 @@ func TestAddBundleRejectsInvalidInputWithoutWriting(t *testing.T) {
 	}
 }
 
+func TestUpdateBundlePropagatesMembersAndUnchooses(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	first := mustAdd(t, s, ItemInput{Name: "Cot", Category: "Nursery"})
+	second := mustAdd(t, s, ItemInput{Name: "Pram", Category: "Travel"})
+	third := mustAdd(t, s, ItemInput{Name: "Monitor", Category: "Nursery"})
+	fourth := mustAdd(t, s, ItemInput{Name: "Carrier", Category: "Travel"})
+	bundle, err := s.AddBundle(ctx, BundleInput{Name: "Set", URL: "https://shop.example.com/set", Price: "100", Members: []BundleMemberInput{{ItemID: second.ID, ComponentLabel: "Pram"}, {ItemID: first.ID}, {ItemID: third.ID}}})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+	removedOption := bundle.Members[1].OptionID
+	if _, err := s.AddComment(ctx, removedOption, "removed comment"); err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+	if _, err := s.AddBundleComment(ctx, bundle.ID, "keep shared comment"); err != nil {
+		t.Fatalf("AddBundleComment: %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE options SET chosen = 1 WHERE id IN (SELECT option_id FROM bundle_members WHERE bundle_id = ?); UPDATE items SET status = ? WHERE id IN (SELECT item_id FROM bundle_members WHERE bundle_id = ?)`, bundle.ID, StatusBought, bundle.ID); err != nil {
+		t.Fatalf("choose bundle fixture: %v", err)
+	}
+
+	updated, err := s.UpdateBundle(ctx, bundle.ID, BundleInput{Name: " Updated set ", URL: "https://shop.example.com/new", Price: "100.01", RegularPrice: "120", Members: []BundleMemberInput{{ItemID: third.ID, ComponentLabel: "Screen"}, {ItemID: fourth.ID, ComponentLabel: "Carrier"}, {ItemID: second.ID, ComponentLabel: "Frame"}}})
+	if err != nil {
+		t.Fatalf("UpdateBundle: %v", err)
+	}
+	if updated.Name != "Updated set" || updated.URL != "https://shop.example.com/new" || updated.RegularPriceCents == nil || *updated.RegularPriceCents != 12000 {
+		t.Errorf("updated bundle = %+v", updated)
+	}
+	if len(updated.Members) != 3 {
+		t.Fatalf("members = %d, want 3", len(updated.Members))
+	}
+	wantItems := []int64{second.ID, third.ID, fourth.ID}
+	wantPositions := []int{0, 2, 3}
+	wantPrices := []int64{3334, 3334, 3333}
+	for i, member := range updated.Members {
+		if member.ItemID != wantItems[i] || member.Position != wantPositions[i] {
+			t.Errorf("member %d = %+v", i, member)
+		}
+		option, err := s.GetOption(ctx, member.OptionID)
+		if err != nil || option.URL != updated.URL || option.Label != member.ComponentLabel || option.PriceCents == nil || *option.PriceCents != wantPrices[i] || option.Chosen {
+			t.Errorf("option %d = %+v, %v", i, option, err)
+		}
+	}
+	if _, err := s.GetOption(ctx, removedOption); !errors.Is(err, ErrNotFound) {
+		t.Errorf("removed option = %v, want %v", err, ErrNotFound)
+	}
+	for _, itemID := range []int64{first.ID, second.ID, third.ID} {
+		item, err := s.Get(ctx, itemID)
+		if err != nil || item.Status != StatusNeeded {
+			t.Errorf("item %d after edit = %+v, %v", itemID, item, err)
+		}
+	}
+	if comments, err := s.ListBundleComments(ctx, bundle.ID); err != nil {
+		t.Errorf("bundle comments after edit: %v", err)
+	} else if len(comments) != 1 || comments[0].Body != "keep shared comment" {
+		t.Errorf("bundle comments = %+v", comments)
+	}
+}
+
+func TestUpdateBundleFailureLeavesDataUnchanged(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	first := mustAdd(t, s, ItemInput{Name: "Cot", Category: "Nursery"})
+	second := mustAdd(t, s, ItemInput{Name: "Pram", Category: "Travel"})
+	bundle, err := s.AddBundle(ctx, BundleInput{Name: "Set", URL: "https://shop.example.com/set", Price: "10", Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: second.ID}}})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+	if _, err := s.UpdateBundle(ctx, bundle.ID, BundleInput{Name: "Broken", URL: "https://shop.example.com/new", Price: "20", Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: 999}}}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateBundle error = %v, want %v", err, ErrNotFound)
+	}
+	got, err := s.GetBundle(ctx, bundle.ID)
+	if err != nil || got.Name != bundle.Name || got.URL != bundle.URL || got.PriceCents != bundle.PriceCents || len(got.Members) != 2 {
+		t.Errorf("bundle after failed update = %+v, %v", got, err)
+	}
+}
+
 func TestBundleCommentCRUD(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()

@@ -2,6 +2,7 @@
 
 - Schema changes are additive through `schema.sql` on every `store.Open`; cover old-database compatibility with a fixture that predates the new tables.
 - Bundle creation validates all members before inserting, then creates generated Options and memberships in one transaction.
+- Bundle edits retain member positions; added Items are ordered by checklist insertion and append after the highest retained position.
 
 ## 2026-08-30 20:08 - US-001
 - Implemented: Bundle vocabulary and additive Bundle persistence schema
@@ -22,4 +23,11 @@
 - Changed: internal/store/store_bundle.go, internal/store/bundle_test.go, docs/tickets/bundle-feature/prd.md
 - Verified: go build ./..., go vet ./..., go test ./..., git diff --check
 - Learnings: Verify a Bundle before listing its shared Comments so missing Bundles return ErrNotFound
+---
+
+## 2026-08-30 20:44 - US-004
+- Implemented: transactional Bundle editing, allocation refresh, generated Option removal, chosen-Bundle reset
+- Changed: internal/store/store_bundle.go, internal/store/bundle_test.go, docs/tickets/bundle-feature/prd.md
+- Verified: go build ./..., go vet ./..., go test ./..., git diff --check
+- Learnings: Preserve position gaps when removing a member so new members truly append
 ---
