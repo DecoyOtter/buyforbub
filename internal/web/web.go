@@ -383,6 +383,7 @@ func parseItemInput(r *http.Request) (store.ItemInput, error) {
 		Qty:      qty,
 		Category: r.PostFormValue("category"),
 		Notes:    r.PostFormValue("notes"),
+		Budget:   r.PostFormValue("budget"),
 	}, nil
 }
 
@@ -410,6 +411,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "Pick a category.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidStatus):
 		http.Error(w, "Unknown status.", http.StatusBadRequest)
+	case errors.Is(err, store.ErrInvalidBudget):
+		http.Error(w, "Budget should be a number.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidURL):
 		http.Error(w, "That does not look like a link.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidPrice):

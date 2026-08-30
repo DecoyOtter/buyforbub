@@ -90,6 +90,7 @@ func TestIndexRendersFullPage(t *testing.T) {
 	assertContains(t, body, "Buy for Bub")
 	assertContains(t, body, "Cot")
 	assertContains(t, body, `id="list"`)
+	assertNotContains(t, body, `name="budget"`)
 	// Every category must be offered in the add form.
 	for _, c := range store.Categories {
 		assertContains(t, body, `<option value="`+c+`">`)
@@ -223,6 +224,57 @@ func TestEditFormAndCancel(t *testing.T) {
 	body = rec.Body.String()
 	assertContains(t, body, "is-open")
 	assertNotContains(t, body, `name="category"`)
+}
+
+func TestEditBudget(t *testing.T) {
+	s, st := newServer(t)
+	it, err := st.Add(context.Background(), store.ItemInput{
+		Name: "Cot", Category: "Nursery", Budget: "$1,200.50",
+	})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	rec := do(t, s, http.MethodGet, "/items/"+itoa(it.ID)+"/edit", nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `name="budget" value="$1,200.50"`)
+
+	rec = do(t, s, http.MethodPost, "/items/"+itoa(it.ID), url.Values{
+		"name": {"Cot"}, "category": {"Nursery"}, "budget": {"$1,500"},
+	})
+	assertStatus(t, rec, http.StatusOK)
+	stored, err := st.Get(context.Background(), it.ID)
+	if err != nil {
+		t.Fatalf("Get set budget: %v", err)
+	}
+	if stored.BudgetText() != "$1,500" {
+		t.Errorf("set budget = %q, want $1,500", stored.BudgetText())
+	}
+
+	rec = do(t, s, http.MethodPost, "/items/"+itoa(it.ID), url.Values{
+		"name": {"Cot"}, "category": {"Nursery"}, "budget": {"lots"},
+	})
+	assertStatus(t, rec, http.StatusBadRequest)
+	assertContains(t, rec.Body.String(), "Budget should be a number")
+	stored, err = st.Get(context.Background(), it.ID)
+	if err != nil {
+		t.Fatalf("Get after invalid budget: %v", err)
+	}
+	if stored.BudgetText() != "$1,500" {
+		t.Errorf("budget after invalid update = %q, want $1,500", stored.BudgetText())
+	}
+
+	rec = do(t, s, http.MethodPost, "/items/"+itoa(it.ID), url.Values{
+		"name": {"Cot"}, "category": {"Nursery"}, "budget": {""},
+	})
+	assertStatus(t, rec, http.StatusOK)
+	stored, err = st.Get(context.Background(), it.ID)
+	if err != nil {
+		t.Fatalf("Get cleared budget: %v", err)
+	}
+	if stored.BudgetCents != nil {
+		t.Errorf("cleared budget = %v, want nil", stored.BudgetCents)
+	}
 }
 
 func TestUpdate(t *testing.T) {

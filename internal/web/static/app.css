@@ -505,7 +505,8 @@ input[type="text"], input[type="number"], select {
 }
 
 .edit__field--category,
-.edit__field--notes { grid-column: 1 / -1; }
+.edit__field--notes,
+.edit__field--budget { grid-column: 1 / -1; }
 
 .edit__actions {
   grid-column: 1 / -1;

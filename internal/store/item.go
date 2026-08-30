@@ -38,6 +38,8 @@ type Item struct {
 
 func (i Item) Bought() bool { return i.Status == StatusBought }
 
+func (i Item) BudgetText() string { return moneyText(i.BudgetCents) }
+
 // ItemInput is the user-supplied half of an item; status is managed separately.
 type ItemInput struct {
 	Name     string `json:"name"`

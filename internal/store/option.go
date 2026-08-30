@@ -39,10 +39,14 @@ func (o Option) Title() string {
 
 // PriceText formats the price for display, or returns "" when there is none.
 func (o Option) PriceText() string {
-	if o.PriceCents == nil {
+	return moneyText(o.PriceCents)
+}
+
+func moneyText(centsValue *int64) string {
+	if centsValue == nil {
 		return ""
 	}
-	whole, cents := *o.PriceCents/100, *o.PriceCents%100
+	whole, cents := *centsValue/100, *centsValue%100
 	if cents == 0 {
 		return "$" + addThousands(strconv.FormatInt(whole, 10))
 	}
