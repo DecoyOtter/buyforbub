@@ -9,7 +9,7 @@
           aria-label="Mark {{.Title}} as the one bought">Choose</button>
   {{end}}
   <button class="option__remove" type="button"
-          hx-post="/options/{{.ID}}/delete" hx-target="#item-{{.ItemID}}" hx-swap="outerHTML"
+          hx-post="/options/{{.ID}}/delete" hx-target="{{if .Chosen}}#list{{else}}#item-{{.ItemID}}{{end}}" hx-swap="outerHTML"
           aria-label="Remove {{.Title}}">&times;</button>
 
   <div class="comments">

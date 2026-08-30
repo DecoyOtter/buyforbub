@@ -11,5 +11,14 @@
     {{if .OptionCount}}<span class="item__links">{{.OptionCount}} link{{if ne .OptionCount 1}}s{{end}}</span>{{end}}
     {{if .Notes}}<span class="item__notes">{{.Notes}}</span>{{end}}
   </button>
+  {{if .Bought}}
+    {{if .ActualCents}}<div class="item__money"><strong>{{.ActualText}}</strong><span>Actual</span></div>{{end}}
+  {{else if .BudgetCents}}
+    <div class="item__money"><strong>{{.BudgetText}}</strong><span>Budget</span></div>
+  {{else}}
+    <button class="item__set-budget" type="button"
+            hx-get="/items/{{.ID}}/edit" hx-target="#item-{{.ID}}" hx-swap="outerHTML"
+            aria-label="Set budget for {{.Name}}">Set budget</button>
+  {{end}}
 </li>
 {{end}}

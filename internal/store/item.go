@@ -20,6 +20,7 @@ var (
 	ErrInvalidName     = errors.New("name is required")
 	ErrInvalidCategory = errors.New("unknown category")
 	ErrInvalidStatus   = errors.New("unknown status")
+	ErrInvalidBudget   = errors.New("budget is not a number")
 )
 
 // Item is one thing to buy.
@@ -30,11 +31,14 @@ type Item struct {
 	Category    string
 	Status      string
 	Notes       string
+	BudgetCents *int64
 	CreatedAt   time.Time
 	OptionCount int
 }
 
 func (i Item) Bought() bool { return i.Status == StatusBought }
+
+func (i Item) BudgetText() string { return moneyText(i.BudgetCents) }
 
 // ItemInput is the user-supplied half of an item; status is managed separately.
 type ItemInput struct {
@@ -42,6 +46,7 @@ type ItemInput struct {
 	Qty      int    `json:"qty"`
 	Category string `json:"category"`
 	Notes    string `json:"notes,omitempty"`
+	Budget   string `json:"budget,omitempty"`
 }
 
 // clean trims, applies defaults, and rejects anything unusable.
@@ -49,6 +54,7 @@ func (in ItemInput) clean() (ItemInput, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	in.Notes = strings.TrimSpace(in.Notes)
 	in.Category = strings.TrimSpace(in.Category)
+	in.Budget = strings.TrimSpace(in.Budget)
 
 	if in.Name == "" {
 		return in, ErrInvalidName
@@ -58,6 +64,9 @@ func (in ItemInput) clean() (ItemInput, error) {
 	}
 	if in.Qty < 1 {
 		in.Qty = 1
+	}
+	if _, err := parsePrice(in.Budget); err != nil {
+		return in, ErrInvalidBudget
 	}
 	return in, nil
 }

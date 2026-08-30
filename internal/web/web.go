@@ -84,9 +84,28 @@ type pageData struct {
 }
 
 type listData struct {
-	Groups []store.CategoryGroup
-	Done   int
-	Total  int
+	Groups  []groupData
+	Overall store.BudgetSummary
+	Done    int
+	Total   int
+}
+
+type groupData struct {
+	Category string
+	Items    []itemData
+	Summary  store.BudgetSummary
+}
+
+type itemData struct {
+	store.Item
+	ActualCents *int64
+}
+
+func (i itemData) ActualText() string {
+	if i.ActualCents == nil {
+		return ""
+	}
+	return store.FormatMoney(*i.ActualCents)
 }
 
 // detailData backs the expanded panel, and the edit form nested inside it.
@@ -186,7 +205,12 @@ func (s *Server) handleRow(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "row", item)
+	prices, err := s.store.ChosenOptionPrices(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, "row", newItemData(item, prices))
 }
 
 func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
@@ -239,6 +263,10 @@ func (s *Server) handleDeleteOption(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.store.DeleteOption(r.Context(), id); err != nil {
 		s.fail(w, r, err)
+		return
+	}
+	if opt.Chosen {
+		s.renderList(w, r)
 		return
 	}
 	s.renderDetail(w, r, opt.ItemID, false)
@@ -316,8 +344,31 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 	if err != nil {
 		return listData{}, err
 	}
+	prices, err := s.store.ChosenOptionPrices(ctx)
+	if err != nil {
+		return listData{}, err
+	}
 	done, total := store.Progress(items)
-	return listData{Groups: store.GroupByCategory(items), Done: done, Total: total}, nil
+	summaries := store.SummarizeBudgets(items, prices)
+	groups := store.GroupByCategory(items)
+	data := make([]groupData, 0, len(groups))
+	for _, group := range groups {
+		view := groupData{Category: group.Category, Summary: summaries.Categories[group.Category]}
+		view.Items = make([]itemData, 0, len(group.Items))
+		for _, item := range group.Items {
+			view.Items = append(view.Items, newItemData(item, prices))
+		}
+		data = append(data, view)
+	}
+	return listData{Groups: data, Overall: summaries.Overall, Done: done, Total: total}, nil
+}
+
+func newItemData(item store.Item, chosenPrices map[int64]*int64) itemData {
+	view := itemData{Item: item}
+	if item.Bought() {
+		view.ActualCents = chosenPrices[item.ID]
+	}
+	return view
 }
 
 func (s *Server) renderDetail(w http.ResponseWriter, r *http.Request, id int64, editing bool) {
@@ -383,6 +434,7 @@ func parseItemInput(r *http.Request) (store.ItemInput, error) {
 		Qty:      qty,
 		Category: r.PostFormValue("category"),
 		Notes:    r.PostFormValue("notes"),
+		Budget:   r.PostFormValue("budget"),
 	}, nil
 }
 
@@ -410,6 +462,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "Pick a category.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidStatus):
 		http.Error(w, "Unknown status.", http.StatusBadRequest)
+	case errors.Is(err, store.ErrInvalidBudget):
+		http.Error(w, "Budget should be a number.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidURL):
 		http.Error(w, "That does not look like a link.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidPrice):

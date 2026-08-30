@@ -29,6 +29,19 @@ _Avoid_: Count, amount
 **Progress**:
 Bought Items over total Items, across the whole list rather than per Category.
 
+### Budgeting
+
+**Budget**:
+The optional planned total allocated to one Item, regardless of Qty. Category
+and whole-list budgets are the sums of their Items' Budgets.
+_Avoid_: Allowance, estimate, target
+
+**Actual spend**:
+The price of a chosen Option. A bought Item without a priced chosen Option has
+an unknown actual spend; summaries report its count separately from known
+actuals.
+_Avoid_: Cost, purchase total
+
 **Seed**:
 The default set of Items a fresh database starts with. Applied once, only to an
 empty list.

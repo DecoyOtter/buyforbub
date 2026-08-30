@@ -41,6 +41,34 @@ func (s *Store) GetOption(ctx context.Context, id int64) (Option, error) {
 	return o, err
 }
 
+// ChosenOptionPrices returns each chosen Option price by Item.
+func (s *Store) ChosenOptionPrices(ctx context.Context) (map[int64]*int64, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT item_id, price_cents FROM options WHERE chosen = 1`)
+	if err != nil {
+		return nil, fmt.Errorf("list chosen option prices: %w", err)
+	}
+	defer rows.Close()
+
+	prices := make(map[int64]*int64)
+	for rows.Next() {
+		var itemID int64
+		var price sql.NullInt64
+		if err := rows.Scan(&itemID, &price); err != nil {
+			return nil, fmt.Errorf("list chosen option prices: %w", err)
+		}
+		if price.Valid {
+			value := price.Int64
+			prices[itemID] = &value
+		} else {
+			prices[itemID] = nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list chosen option prices: %w", err)
+	}
+	return prices, nil
+}
+
 // AddOption attaches a candidate product to an item.
 func (s *Store) AddOption(ctx context.Context, itemID int64, in OptionInput) (Option, error) {
 	c, err := in.clean()

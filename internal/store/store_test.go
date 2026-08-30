@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -52,6 +53,66 @@ func TestOpenIsIdempotent(t *testing.T) {
 	}
 	if len(items) != 1 {
 		t.Fatalf("got %d items after reopen, want 1", len(items))
+	}
+}
+
+func TestOpenCreatesNullableBudgetColumn(t *testing.T) {
+	s := newStore(t)
+
+	var kind string
+	var notNull int
+	if err := s.db.QueryRow(`SELECT type, "notnull" FROM pragma_table_info('items') WHERE name = 'budget_cents'`).Scan(&kind, &notNull); err != nil {
+		t.Fatalf("budget_cents schema: %v", err)
+	}
+	if kind != "INTEGER" || notNull != 0 {
+		t.Errorf("budget_cents = type %q notnull %d, want nullable INTEGER", kind, notNull)
+	}
+}
+
+func TestOpenMigratesBudgetColumn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE items (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		qty INTEGER NOT NULL DEFAULT 1,
+		category TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'needed',
+		notes TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL
+	)`); err != nil {
+		db.Close()
+		t.Fatalf("create legacy items: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO items (name, qty, category, status, notes, created_at)
+		VALUES ('Cot', 2, 'Nursery', 'needed', 'keep me', '2026-01-01T00:00:00Z')`); err != nil {
+		db.Close()
+		t.Fatalf("insert legacy item: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+
+	items, err := s.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(items) != 1 || items[0].Name != "Cot" || items[0].Qty != 2 || items[0].Notes != "keep me" || items[0].BudgetCents != nil {
+		t.Fatalf("legacy data after migration = %+v", items)
+	}
+	if _, err := s.Update(context.Background(), items[0].ID, ItemInput{
+		Name: "Cot", Qty: 2, Category: "Nursery", Notes: "keep me", Budget: "$500",
+	}); err != nil {
+		t.Fatalf("Update migrated item: %v", err)
 	}
 }
 
@@ -130,6 +191,99 @@ func TestAddValidation(t *testing.T) {
 				t.Errorf("Get returned %+v, want %+v", stored, got)
 			}
 		})
+	}
+}
+
+func TestBudgetPersistenceAndValidation(t *testing.T) {
+	tests := []struct {
+		name      string
+		budget    string
+		wantCents *int64
+		wantErr   error
+	}{
+		{name: "blank", budget: "   "},
+		{name: "whole dollars", budget: "$1,199.00", wantCents: cents(119900)},
+		{name: "dollars and cents", budget: "199.95", wantCents: cents(19995)},
+		{name: "zero", budget: "0", wantCents: cents(0)},
+		{name: "malformed", budget: "about a grand", wantErr: ErrInvalidBudget},
+		{name: "negative", budget: "-1", wantErr: ErrInvalidBudget},
+		{name: "not a number", budget: "NaN", wantErr: ErrInvalidBudget},
+		{name: "infinite", budget: "Inf", wantErr: ErrInvalidBudget},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newStore(t)
+			item, err := s.Add(context.Background(), ItemInput{
+				Name: "Pram", Qty: 4, Category: "Travel", Budget: tt.budget,
+			})
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Add error = %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Add: %v", err)
+			}
+			assertCents(t, "Add budget", item.BudgetCents, tt.wantCents)
+
+			stored, err := s.Get(context.Background(), item.ID)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			assertCents(t, "stored budget", stored.BudgetCents, tt.wantCents)
+			if stored.Qty != 4 {
+				t.Errorf("stored qty = %d, want 4", stored.Qty)
+			}
+		})
+	}
+}
+
+func TestUpdateSetsAndClearsBudgetWithoutQtyMultiplication(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	item := mustAdd(t, s, ItemInput{Name: "Nappies", Qty: 1, Category: "Other"})
+
+	updated, err := s.Update(ctx, item.ID, ItemInput{
+		Name: "Nappies", Qty: 6, Category: "Other", Budget: "$100",
+	})
+	if err != nil {
+		t.Fatalf("set budget: %v", err)
+	}
+	assertCents(t, "budget with qty 6", updated.BudgetCents, cents(10000))
+	if _, err := s.Update(ctx, item.ID, ItemInput{
+		Name: "Nappies", Qty: 6, Category: "Other", Budget: "many",
+	}); !errors.Is(err, ErrInvalidBudget) {
+		t.Fatalf("invalid budget error = %v, want %v", err, ErrInvalidBudget)
+	}
+	stored, err := s.Get(ctx, item.ID)
+	if err != nil {
+		t.Fatalf("Get after invalid update: %v", err)
+	}
+	assertCents(t, "budget after invalid update", stored.BudgetCents, cents(10000))
+
+	updated, err = s.Update(ctx, item.ID, ItemInput{
+		Name: "Nappies", Qty: 6, Category: "Other", Budget: "",
+	})
+	if err != nil {
+		t.Fatalf("clear budget: %v", err)
+	}
+	assertCents(t, "cleared budget", updated.BudgetCents, nil)
+}
+
+func cents(value int64) *int64 { return &value }
+
+func assertCents(t *testing.T, name string, got, want *int64) {
+	t.Helper()
+	if got == nil || want == nil {
+		if got != nil || want != nil {
+			t.Errorf("%s = %v, want %v", name, got, want)
+		}
+		return
+	}
+	if *got != *want {
+		t.Errorf("%s = %d, want %d", name, *got, *want)
 	}
 }
 
@@ -257,7 +411,7 @@ func TestDelete(t *testing.T) {
 func TestSeedIfEmpty(t *testing.T) {
 	ctx := context.Background()
 	seed := []ItemInput{
-		{Name: "Cot", Category: "Nursery"},
+		{Name: "Cot", Category: "Nursery", Budget: "$800"},
 		{Name: "Bottles", Qty: 6, Category: "Feeding"},
 	}
 
@@ -277,7 +431,7 @@ func TestSeedIfEmpty(t *testing.T) {
 		if len(items) != len(seed) {
 			t.Fatalf("got %d items, want %d", len(items), len(seed))
 		}
-		if items[0].Name != "Cot" || items[1].Qty != 6 {
+		if items[0].Name != "Cot" || items[0].BudgetCents == nil || *items[0].BudgetCents != 80000 || items[1].Qty != 6 || items[1].BudgetCents != nil {
 			t.Errorf("seeded items not stored as given: %+v", items)
 		}
 	})
