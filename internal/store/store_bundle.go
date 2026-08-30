@@ -316,6 +316,32 @@ func unchooseBundleTx(ctx context.Context, tx *sql.Tx, id int64) error {
 	return nil
 }
 
+func chosenBundleIDsForItemTx(ctx context.Context, tx *sql.Tx, itemID int64) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT DISTINCT bm.bundle_id
+		FROM bundle_members bm
+		JOIN options o ON o.id = bm.option_id
+		WHERE bm.item_id = ? AND o.chosen = 1
+		ORDER BY bm.bundle_id`, itemID)
+	if err != nil {
+		return nil, fmt.Errorf("bundle lifecycle: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("bundle lifecycle: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("bundle lifecycle: %w", err)
+	}
+	return ids, nil
+}
+
 func reallocateBundleTx(ctx context.Context, tx *sql.Tx, id int64) error {
 	var price int64
 	if err := tx.QueryRowContext(ctx, `SELECT price_cents FROM bundles WHERE id = ?`, id).Scan(&price); err != nil {

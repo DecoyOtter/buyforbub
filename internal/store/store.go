@@ -153,6 +153,17 @@ func (s *Store) SetStatus(ctx context.Context, id int64, status string) (Item, e
 	}
 	defer tx.Rollback()
 
+	if status == StatusNeeded {
+		bundleIDs, err := chosenBundleIDsForItemTx(ctx, tx, id)
+		if err != nil {
+			return Item{}, err
+		}
+		for _, bundleID := range bundleIDs {
+			if err := unchooseBundleTx(ctx, tx, bundleID); err != nil {
+				return Item{}, err
+			}
+		}
+	}
 	res, err := tx.ExecContext(ctx, `UPDATE items SET status = ? WHERE id = ?`, status, id)
 	if err != nil {
 		return Item{}, fmt.Errorf("set status: %w", err)

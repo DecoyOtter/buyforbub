@@ -447,6 +447,53 @@ func TestChooseMissingBundleLeavesChoicesUnchanged(t *testing.T) {
 	}
 }
 
+func TestNormalActionsRespectChosenBundle(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	first := mustAdd(t, s, ItemInput{Name: "Cot", Category: "Nursery"})
+	second := mustAdd(t, s, ItemInput{Name: "Pram", Category: "Travel"})
+	normal := mustAddOption(t, s, first.ID, OptionInput{URL: "https://shop.example.com/normal"})
+	bundle, err := s.AddBundle(ctx, BundleInput{Name: "Set", URL: "https://shop.example.com/set", Price: "20", Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: second.ID}}})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+
+	if _, err := s.ChooseOption(ctx, bundle.Members[0].OptionID); err != nil {
+		t.Fatalf("ChooseOption bundle member: %v", err)
+	}
+	for _, member := range bundle.Members {
+		assertChosen(t, s, member.ItemID, member.OptionID)
+	}
+
+	if _, err := s.ChooseOption(ctx, normal.ID); err != nil {
+		t.Fatalf("ChooseOption normal: %v", err)
+	}
+	assertChosen(t, s, first.ID, normal.ID)
+	assertChosen(t, s, second.ID, 0)
+	if got, _ := s.Get(ctx, second.ID); got.Status != StatusNeeded {
+		t.Errorf("other bundle member = %q, want %q", got.Status, StatusNeeded)
+	}
+
+	if _, err := s.ChooseBundle(ctx, bundle.ID); err != nil {
+		t.Fatalf("ChooseBundle: %v", err)
+	}
+	if _, err := s.Toggle(ctx, second.ID); err != nil {
+		t.Fatalf("Toggle bundle member: %v", err)
+	}
+	for _, member := range bundle.Members {
+		assertChosen(t, s, member.ItemID, 0)
+		if got, _ := s.Get(ctx, member.ItemID); got.Status != StatusNeeded {
+			t.Errorf("bundle member %d = %q, want %q", member.ItemID, got.Status, StatusNeeded)
+		}
+	}
+
+	if _, err := s.SetStatus(ctx, first.ID, StatusBought); err != nil {
+		t.Fatalf("SetStatus bought: %v", err)
+	}
+	assertChosen(t, s, first.ID, 0)
+	assertChosen(t, s, second.ID, 0)
+}
+
 func TestBundleCommentCRUD(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
