@@ -173,3 +173,98 @@ func TestAddBundleRejectsInvalidInputWithoutWriting(t *testing.T) {
 		})
 	}
 }
+
+func TestBundleCommentCRUD(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	first := mustAdd(t, s, ItemInput{Name: "Cot", Category: "Nursery"})
+	second := mustAdd(t, s, ItemInput{Name: "Pram", Category: "Travel"})
+	bundle, err := s.AddBundle(ctx, BundleInput{
+		Name: "Set", URL: "https://shop.example.com/set", Price: "10",
+		Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: second.ID}},
+	})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+
+	firstComment, err := s.AddBundleComment(ctx, bundle.ID, "  includes the adapter  ")
+	if err != nil {
+		t.Fatalf("AddBundleComment: %v", err)
+	}
+	if firstComment.Body != "includes the adapter" || firstComment.BundleID != bundle.ID {
+		t.Errorf("comment = %+v", firstComment)
+	}
+	if _, err := s.AddBundleComment(ctx, bundle.ID, ""); !errors.Is(err, ErrInvalidComment) {
+		t.Errorf("blank AddBundleComment error = %v, want %v", err, ErrInvalidComment)
+	}
+	secondComment, err := s.AddBundleComment(ctx, bundle.ID, "good saving")
+	if err != nil {
+		t.Fatalf("AddBundleComment: %v", err)
+	}
+
+	comments, err := s.ListBundleComments(ctx, bundle.ID)
+	if err != nil {
+		t.Fatalf("ListBundleComments: %v", err)
+	}
+	if len(comments) != 2 || comments[0].ID != firstComment.ID || comments[1].ID != secondComment.ID {
+		t.Errorf("comments = %+v", comments)
+	}
+	got, err := s.GetBundleComment(ctx, firstComment.ID)
+	if err != nil || got.Body != firstComment.Body {
+		t.Errorf("GetBundleComment = %+v, %v", got, err)
+	}
+	if err := s.DeleteBundleComment(ctx, firstComment.ID); err != nil {
+		t.Fatalf("DeleteBundleComment: %v", err)
+	}
+	if _, err := s.GetBundleComment(ctx, firstComment.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("deleted GetBundleComment error = %v, want %v", err, ErrNotFound)
+	}
+	if err := s.DeleteBundleComment(ctx, firstComment.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("second DeleteBundleComment error = %v, want %v", err, ErrNotFound)
+	}
+}
+
+func TestBundleCommentsKeepOptionCommentsSeparate(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	first := mustAdd(t, s, ItemInput{Name: "Cot", Category: "Nursery"})
+	second := mustAdd(t, s, ItemInput{Name: "Pram", Category: "Travel"})
+	bundle, err := s.AddBundle(ctx, BundleInput{
+		Name: "Set", URL: "https://shop.example.com/set", Price: "10",
+		Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: second.ID}},
+	})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+	if _, err := s.AddBundleComment(ctx, bundle.ID, "shared"); err != nil {
+		t.Fatalf("AddBundleComment: %v", err)
+	}
+	if _, err := s.AddComment(ctx, bundle.Members[0].OptionID, "item-specific"); err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+	comments, err := s.ListBundleComments(ctx, bundle.ID)
+	if err != nil || len(comments) != 1 || comments[0].Body != "shared" {
+		t.Errorf("bundle comments = %+v, %v", comments, err)
+	}
+	optionComments, err := s.ListComments(ctx, bundle.Members[0].OptionID)
+	if err != nil || len(optionComments) != 1 || optionComments[0].Body != "item-specific" {
+		t.Errorf("option comments = %+v, %v", optionComments, err)
+	}
+}
+
+func TestBundleCommentsMissingRecords(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	if _, err := s.AddBundleComment(ctx, 999, "nope"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing AddBundleComment error = %v, want %v", err, ErrNotFound)
+	}
+	if _, err := s.ListBundleComments(ctx, 999); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing ListBundleComments error = %v, want %v", err, ErrNotFound)
+	}
+	if _, err := s.GetBundleComment(ctx, 999); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing GetBundleComment error = %v, want %v", err, ErrNotFound)
+	}
+	if err := s.DeleteBundleComment(ctx, 999); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing DeleteBundleComment error = %v, want %v", err, ErrNotFound)
+	}
+}

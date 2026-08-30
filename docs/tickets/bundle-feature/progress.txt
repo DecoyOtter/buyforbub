@@ -16,3 +16,10 @@
 - Verified: go build ./..., go vet ./..., go test ./..., git diff --check
 - Learnings: Close parent query rows before member lookups with the Store's single SQLite connection
 ---
+
+## 2026-08-30 20:18 - US-003
+- Implemented: Shared Bundle Comment store CRUD with existing Comment validation
+- Changed: internal/store/store_bundle.go, internal/store/bundle_test.go, docs/tickets/bundle-feature/prd.md
+- Verified: go build ./..., go vet ./..., go test ./..., git diff --check
+- Learnings: Verify a Bundle before listing its shared Comments so missing Bundles return ErrNotFound
+---

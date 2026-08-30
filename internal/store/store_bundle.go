@@ -10,6 +10,7 @@ import (
 
 const selectBundleColumns = `SELECT id, name, url, price_cents, regular_price_cents, created_at FROM bundles`
 const selectBundleMemberColumns = `SELECT id, bundle_id, item_id, option_id, position, component_label FROM bundle_members`
+const selectBundleCommentColumns = `SELECT id, bundle_id, body, created_at FROM bundle_comments`
 
 // AddBundle creates one package and a generated, unchosen option per member.
 func (s *Store) AddBundle(ctx context.Context, in BundleInput) (Bundle, error) {
@@ -142,6 +143,73 @@ func (s *Store) ListBundleMembers(ctx context.Context, bundleID int64) ([]Bundle
 	return members, nil
 }
 
+// ListBundleComments returns a bundle's shared comments oldest first.
+func (s *Store) ListBundleComments(ctx context.Context, bundleID int64) ([]BundleComment, error) {
+	if _, err := s.GetBundle(ctx, bundleID); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, selectBundleCommentColumns+` WHERE bundle_id = ? ORDER BY id`, bundleID)
+	if err != nil {
+		return nil, fmt.Errorf("list bundle comments: %w", err)
+	}
+	defer rows.Close()
+
+	var comments []BundleComment
+	for rows.Next() {
+		comment, err := scanBundleComment(rows)
+		if err != nil {
+			return nil, err
+		}
+		comments = append(comments, comment)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list bundle comments: %w", err)
+	}
+	return comments, nil
+}
+
+// GetBundleComment returns one shared bundle comment.
+func (s *Store) GetBundleComment(ctx context.Context, id int64) (BundleComment, error) {
+	comment, err := scanBundleComment(s.db.QueryRowContext(ctx, selectBundleCommentColumns+` WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return BundleComment{}, ErrNotFound
+	}
+	return comment, err
+}
+
+// AddBundleComment records a shared remark against a bundle.
+func (s *Store) AddBundleComment(ctx context.Context, bundleID int64, body string) (BundleComment, error) {
+	body, err := cleanComment(body)
+	if err != nil {
+		return BundleComment{}, err
+	}
+	if _, err := s.GetBundle(ctx, bundleID); err != nil {
+		return BundleComment{}, err
+	}
+
+	created := time.Now().UTC()
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO bundle_comments (bundle_id, body, created_at) VALUES (?, ?, ?)`,
+		bundleID, body, formatTime(created))
+	if err != nil {
+		return BundleComment{}, fmt.Errorf("add bundle comment: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return BundleComment{}, fmt.Errorf("add bundle comment: %w", err)
+	}
+	return BundleComment{ID: id, BundleID: bundleID, Body: body, CreatedAt: created}, nil
+}
+
+// DeleteBundleComment removes one shared bundle comment.
+func (s *Store) DeleteBundleComment(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM bundle_comments WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete bundle comment: %w", err)
+	}
+	return mustAffectOne(res, "delete bundle comment")
+}
+
 func scanBundle(sc scanner) (Bundle, error) {
 	var (
 		b       Bundle
@@ -163,4 +231,23 @@ func scanBundle(sc scanner) (Bundle, error) {
 	}
 	b.CreatedAt = parsed
 	return b, nil
+}
+
+func scanBundleComment(sc scanner) (BundleComment, error) {
+	var (
+		comment BundleComment
+		created string
+	)
+	if err := sc.Scan(&comment.ID, &comment.BundleID, &comment.Body, &created); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return BundleComment{}, err
+		}
+		return BundleComment{}, fmt.Errorf("scan bundle comment: %w", err)
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, created)
+	if err != nil {
+		return BundleComment{}, fmt.Errorf("scan bundle comment %d: bad created_at %q: %w", comment.ID, created, err)
+	}
+	comment.CreatedAt = parsed
+	return comment, nil
 }

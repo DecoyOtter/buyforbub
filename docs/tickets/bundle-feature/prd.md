@@ -56,16 +56,16 @@
 
 **Details:**
 * **Priority:** 3
-* **Passes:** `false`
+* **Passes:** `true`
 * **Notes:** *None*
 
 **Acceptance Criteria:**
-* [ ] Store operations add, get, list, and delete Bundle Comments
-* [ ] Bundle Comment bodies are trimmed and blank bodies are rejected
-* [ ] Bundle Comments are returned oldest first and remain separate from Option Comments
-* [ ] Missing Bundles and Bundle Comments return `ErrNotFound`
-* [ ] Tests pass
-* [ ] Typecheck passes
+* [x] Store operations add, get, list, and delete Bundle Comments
+* [x] Bundle Comment bodies are trimmed and blank bodies are rejected
+* [x] Bundle Comments are returned oldest first and remain separate from Option Comments
+* [x] Missing Bundles and Bundle Comments return `ErrNotFound`
+* [x] Tests pass
+* [x] Typecheck passes
 
 ### US-004: Edit Bundles and recalculate members
 
