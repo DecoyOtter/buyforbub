@@ -70,6 +70,32 @@ rounded edges for leaning", "too expensive". An Option has many, in the order
 they were written. Nobody owns a Comment; the list is shared, so is the opinion.
 _Avoid_: Note, review, feedback, pro, con
 
+### Bundles
+
+**Bundle**:
+One store package being considered as a single purchase, shared across two or
+more Items.
+_Avoid_: Pack, set, deal
+
+**Bundle member**:
+One tracked Item included in a Bundle, in its stable Bundle order.
+_Avoid_: Part, entry
+
+**Bundle Option**:
+The generated Option beneath a Bundle member Item. It uses the Bundle URL and
+that Item's allocated share; it cannot be deleted independently.
+_Avoid_: Bundle link, package option
+
+**Component label**:
+An optional store-facing name for a Bundle member. A blank label falls back to
+the Item name when displayed.
+_Avoid_: Member name, title
+
+**Bundle Comment**:
+One shared remark about a Bundle, visible from its rail card and every Bundle
+Option. It is separate from an Item-specific Option Comment.
+_Avoid_: Package note, shared review
+
 **Choosing**:
 Committing to an Option. It marks the Item bought and records which Option won,
 in one action. Marking the Item back to needed un-chooses it, so the record
@@ -86,3 +112,7 @@ never claims something was bought when it was not.
   Item — takes them with it.
 - Choosing an Option, or backing that out, says nothing about its Comments. A
   losing Option keeps the reasons it lost.
+- A Bundle has two or more Bundle members. Each member has one generated Bundle
+  Option, and a Bundle is chosen only when every generated Bundle Option is
+  chosen.
+- Bundle Comments belong to the Bundle, not a member Item or Bundle Option.
