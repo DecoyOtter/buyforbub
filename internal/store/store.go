@@ -55,13 +55,17 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
+	if err := migrateBudget(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate schema: %w", err)
+	}
 	return &Store{db: db}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
 
 const selectColumns = `
-	SELECT i.id, i.name, i.qty, i.category, i.status, i.notes, i.created_at,
+	SELECT i.id, i.name, i.qty, i.category, i.status, i.notes, i.budget_cents, i.created_at,
 	       (SELECT COUNT(*) FROM options o WHERE o.item_id = i.id)
 	FROM items i`
 
@@ -104,8 +108,8 @@ func (s *Store) Add(ctx context.Context, in ItemInput) (Item, error) {
 
 	created := time.Now().UTC()
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO items (name, qty, category, status, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		in.Name, in.Qty, in.Category, StatusNeeded, in.Notes, formatTime(created))
+		`INSERT INTO items (name, qty, category, status, notes, budget_cents, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		in.Name, in.Qty, in.Category, StatusNeeded, in.Notes, budgetCents(in), formatTime(created))
 	if err != nil {
 		return Item{}, fmt.Errorf("add item: %w", err)
 	}
@@ -115,7 +119,7 @@ func (s *Store) Add(ctx context.Context, in ItemInput) (Item, error) {
 	}
 	return Item{
 		ID: id, Name: in.Name, Qty: in.Qty, Category: in.Category,
-		Status: StatusNeeded, Notes: in.Notes, CreatedAt: created,
+		Status: StatusNeeded, Notes: in.Notes, BudgetCents: budgetCents(in), CreatedAt: created,
 	}, nil
 }
 
@@ -127,8 +131,8 @@ func (s *Store) Update(ctx context.Context, id int64, in ItemInput) (Item, error
 	}
 
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE items SET name = ?, qty = ?, category = ?, notes = ? WHERE id = ?`,
-		in.Name, in.Qty, in.Category, in.Notes, id)
+		`UPDATE items SET name = ?, qty = ?, category = ?, notes = ?, budget_cents = ? WHERE id = ?`,
+		in.Name, in.Qty, in.Category, in.Notes, budgetCents(in), id)
 	if err != nil {
 		return Item{}, fmt.Errorf("update item: %w", err)
 	}
@@ -218,8 +222,8 @@ func (s *Store) SeedIfEmpty(ctx context.Context, inputs []ItemInput) (int, error
 	now := formatTime(time.Now().UTC())
 	for _, in := range cleaned {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO items (name, qty, category, status, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-			in.Name, in.Qty, in.Category, StatusNeeded, in.Notes, now); err != nil {
+			`INSERT INTO items (name, qty, category, status, notes, budget_cents, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			in.Name, in.Qty, in.Category, StatusNeeded, in.Notes, budgetCents(in), now); err != nil {
 			return 0, fmt.Errorf("seed: %w", err)
 		}
 	}
@@ -237,13 +241,17 @@ type scanner interface {
 func scanItem(sc scanner) (Item, error) {
 	var (
 		it      Item
+		budget  sql.NullInt64
 		created string
 	)
-	if err := sc.Scan(&it.ID, &it.Name, &it.Qty, &it.Category, &it.Status, &it.Notes, &created, &it.OptionCount); err != nil {
+	if err := sc.Scan(&it.ID, &it.Name, &it.Qty, &it.Category, &it.Status, &it.Notes, &budget, &created, &it.OptionCount); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Item{}, err
 		}
 		return Item{}, fmt.Errorf("scan item: %w", err)
+	}
+	if budget.Valid {
+		it.BudgetCents = &budget.Int64
 	}
 	t, err := time.Parse(time.RFC3339Nano, created)
 	if err != nil {
@@ -251,6 +259,67 @@ func scanItem(sc scanner) (Item, error) {
 	}
 	it.CreatedAt = t
 	return it, nil
+}
+
+func budgetCents(in ItemInput) *int64 {
+	budget, _ := parsePrice(in.Budget)
+	return budget
+}
+
+func migrateBudget(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(items)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, kind string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == "budget_cents" {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE items ADD COLUMN budget_cents INTEGER`)
+	return err
+}
+
+// ChosenOptionPrices returns every chosen option, retaining an unpriced choice
+// as a nil value.
+func (s *Store) ChosenOptionPrices(ctx context.Context) (map[int64]*int64, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT item_id, price_cents FROM options WHERE chosen = 1`)
+	if err != nil {
+		return nil, fmt.Errorf("list chosen prices: %w", err)
+	}
+	defer rows.Close()
+	prices := make(map[int64]*int64)
+	for rows.Next() {
+		var itemID int64
+		var price sql.NullInt64
+		if err := rows.Scan(&itemID, &price); err != nil {
+			return nil, fmt.Errorf("list chosen prices: %w", err)
+		}
+		if price.Valid {
+			value := price.Int64
+			prices[itemID] = &value
+		} else {
+			prices[itemID] = nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list chosen prices: %w", err)
+	}
+	return prices, nil
 }
 
 func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }

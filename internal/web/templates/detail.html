@@ -27,7 +27,7 @@
       {{end}}
 
       <form class="option-add"
-            hx-post="/items/{{.Item.ID}}/options" hx-target="#item-{{.Item.ID}}" hx-swap="outerHTML"
+            hx-post="/items/{{.Item.ID}}/options" hx-target="#list" hx-swap="outerHTML"
             hx-on::after-request="if (event.detail.successful) { this.reset(); this.querySelector('input[name=url]').focus(); }">
         <input class="option-add__url" type="text" name="url" placeholder="Paste a link" required
                autocomplete="off" aria-label="Link">

@@ -17,6 +17,10 @@
     <span>Notes</span>
     <input type="text" name="notes" value="{{.Item.Notes}}" autocomplete="off">
   </label>
+  <label class="edit__field edit__field--budget">
+    <span>Budget</span>
+    <input type="text" name="budget" value="{{.Item.BudgetText}}" placeholder="Optional" inputmode="decimal" autocomplete="off">
+  </label>
   <div class="edit__actions">
     <button class="btn btn--primary" type="submit">Save</button>
     <button class="btn" type="button"

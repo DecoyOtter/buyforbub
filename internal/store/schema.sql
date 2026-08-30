@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS items (
     category   TEXT    NOT NULL,
     status     TEXT    NOT NULL DEFAULT 'needed',
     notes      TEXT    NOT NULL DEFAULT '',
+    budget_cents INTEGER,
     created_at TEXT    NOT NULL
 );
 

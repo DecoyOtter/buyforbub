@@ -10,9 +10,23 @@
     <ul class="items">
       {{range .Items}}{{template "row" .}}{{end}}
     </ul>
+    {{template "summary" .Summary}}
   </section>
   {{else}}
   <p class="empty">Nothing on the list yet. Add the first thing above.</p>
   {{end}}
+
+  {{if .Groups}}<section class="summary summary--overall">
+    <h2 class="summary__title">Whole list</h2>
+    {{template "summary-values" .Overall}}
+  </section>{{end}}
 </div>
+{{end}}
+
+{{define "summary"}}<div class="summary">
+  {{template "summary-values" .}}
+</div>{{end}}
+
+{{define "summary-values"}}<p class="summary__amounts"><span>Budget <strong>{{.BudgetText}}</strong></span><span>Actual <strong>{{.ActualText}}</strong></span>{{if .Over}}<span class="summary__over"><strong>Over by {{.DifferenceText}}</strong></span>{{else}}<span>Remaining <strong>{{.DifferenceText}}</strong></span>{{end}}</p>
+  {{if or .Unbudgeted .UnknownActual}}<p class="summary__counts">{{if .Unbudgeted}}{{.Unbudgeted}} unbudgeted{{if gt .Unbudgeted 1}} items{{else}} item{{end}}{{end}}{{if and .Unbudgeted .UnknownActual}} · {{end}}{{if .UnknownActual}}{{.UnknownActual}} unknown actual{{if gt .UnknownActual 1}}s{{end}}{{end}}</p>{{end}}
 {{end}}

@@ -2,10 +2,13 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
 )
+
+func cents(v int64) *int64 { return &v }
 
 func newStore(t *testing.T) *Store {
 	t.Helper()
@@ -52,6 +55,36 @@ func TestOpenIsIdempotent(t *testing.T) {
 	}
 	if len(items) != 1 {
 		t.Fatalf("got %d items after reopen, want 1", len(items))
+	}
+}
+
+func TestOpenMigratesBudgetColumn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, qty INTEGER NOT NULL DEFAULT 1,
+        category TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'needed', notes TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL)`); err != nil {
+		t.Fatalf("create legacy items: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO items (name, qty, category, status, notes, created_at) VALUES ('Cot', 1, 'Nursery', 'needed', '', '2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatalf("insert legacy item: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+	items, err := s.List(context.Background())
+	if err != nil || len(items) != 1 || items[0].Name != "Cot" || items[0].BudgetCents != nil {
+		t.Fatalf("legacy item after migration = %+v, %v", items, err)
 	}
 }
 
@@ -130,6 +163,28 @@ func TestAddValidation(t *testing.T) {
 				t.Errorf("Get returned %+v, want %+v", stored, got)
 			}
 		})
+	}
+}
+
+func TestBudgetPersistenceAndValidation(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+
+	it := mustAdd(t, s, ItemInput{Name: "Pram", Qty: 2, Category: "Travel", Budget: "$1,199.50"})
+	if it.BudgetCents == nil || *it.BudgetCents != 119950 || it.BudgetText() != "$1,199.50" {
+		t.Errorf("budget = %v (%q), want 119950 ($1,199.50)", it.BudgetCents, it.BudgetText())
+	}
+	updated, err := s.Update(ctx, it.ID, ItemInput{Name: "Pram", Qty: 5, Category: "Travel", Budget: ""})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.BudgetCents != nil {
+		t.Errorf("cleared budget = %v, want nil", updated.BudgetCents)
+	}
+	for _, budget := range []string{"about $1k", "-1"} {
+		if _, err := s.Add(ctx, ItemInput{Name: "Bad", Category: "Other", Budget: budget}); !errors.Is(err, ErrInvalidBudget) {
+			t.Errorf("Add budget %q error = %v, want %v", budget, err, ErrInvalidBudget)
+		}
 	}
 }
 

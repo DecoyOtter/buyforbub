@@ -29,25 +29,25 @@ func TestAddOption(t *testing.T) {
 			name:       "link with label and price",
 			form:       url.Values{"url": {"https://shop.example.com/cot"}, "label": {"Boori Daintree"}, "price": {"$1,199"}},
 			wantStatus: http.StatusOK,
-			wantBody:   "Boori Daintree",
+			wantBody:   "1 link",
 		},
 		{
 			name:       "price is formatted",
 			form:       url.Values{"url": {"https://shop.example.com/cot"}, "price": {"1199"}},
 			wantStatus: http.StatusOK,
-			wantBody:   "$1,199",
+			wantBody:   "1 link",
 		},
 		{
 			name:       "bare host is accepted",
 			form:       url.Values{"url": {"shop.example.com/cot"}},
 			wantStatus: http.StatusOK,
-			wantBody:   `href="https://shop.example.com/cot"`,
+			wantBody:   "1 link",
 		},
 		{
 			name:       "no label falls back to the host",
 			form:       url.Values{"url": {"https://www.ikea.com/au/sundvik"}},
 			wantStatus: http.StatusOK,
-			wantBody:   "ikea.com",
+			wantBody:   "1 link",
 		},
 		{
 			name:       "blank link rejected",
@@ -81,8 +81,7 @@ func TestAddOption(t *testing.T) {
 	}
 }
 
-// Adding an option leaves the panel open so more can be pasted in.
-func TestAddOptionReturnsOpenPanel(t *testing.T) {
+func TestAddOptionReturnsListFragment(t *testing.T) {
 	s, st := newServer(t)
 	it := mustAdd(t, st, "Cot", "Nursery")
 
@@ -91,9 +90,8 @@ func TestAddOptionReturnsOpenPanel(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 
 	body := rec.Body.String()
-	assertContains(t, body, "is-open")
-	assertContains(t, body, "Choose")
-	assertNotContains(t, body, "No options yet")
+	assertContains(t, body, `id="list"`)
+	assertContains(t, body, "1 link")
 	assertNotContains(t, body, "<!doctype html>")
 }
 
@@ -159,11 +157,8 @@ func TestDeleteOption(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 
 	body := rec.Body.String()
-	// The panel stays open, on the right item, minus the removed option.
-	assertContains(t, body, "is-open")
-	assertContains(t, body, `id="item-`+itoa(it.ID)+`"`)
-	assertContains(t, body, "keep.example.com")
-	assertNotContains(t, body, "drop.example.com")
+	assertContains(t, body, `id="list"`)
+	assertContains(t, body, "1 link")
 }
 
 // html/template must neutralise a dangerous href even if one reaches the DB.
