@@ -204,6 +204,74 @@ func (s *Store) DeleteBundle(ctx context.Context, id int64) error {
 	return nil
 }
 
+// ChooseBundle chooses every generated option and buys every member Item.
+func (s *Store) ChooseBundle(ctx context.Context, id int64) (Bundle, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Bundle{}, fmt.Errorf("choose bundle: %w", err)
+	}
+	defer tx.Rollback()
+
+	members, err := listBundleMembersTx(ctx, tx, id)
+	if err != nil {
+		return Bundle{}, err
+	}
+	if len(members) == 0 {
+		var found int
+		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM bundles WHERE id = ?`, id).Scan(&found); errors.Is(err, sql.ErrNoRows) {
+			return Bundle{}, ErrNotFound
+		} else if err != nil {
+			return Bundle{}, fmt.Errorf("choose bundle: %w", err)
+		}
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT DISTINCT conflicting.bundle_id
+		FROM bundle_members target
+		JOIN bundle_members conflicting ON conflicting.item_id = target.item_id
+		JOIN options conflicting_option ON conflicting_option.id = conflicting.option_id
+		WHERE target.bundle_id = ? AND conflicting.bundle_id != ? AND conflicting_option.chosen = 1
+		ORDER BY conflicting.bundle_id`, id, id)
+	if err != nil {
+		return Bundle{}, fmt.Errorf("choose bundle: %w", err)
+	}
+	var conflictingIDs []int64
+	for rows.Next() {
+		var conflictingID int64
+		if err := rows.Scan(&conflictingID); err != nil {
+			rows.Close()
+			return Bundle{}, fmt.Errorf("choose bundle: %w", err)
+		}
+		conflictingIDs = append(conflictingIDs, conflictingID)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return Bundle{}, fmt.Errorf("choose bundle: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return Bundle{}, fmt.Errorf("choose bundle: %w", err)
+	}
+
+	for _, conflictingID := range conflictingIDs {
+		if err := unchooseBundleTx(ctx, tx, conflictingID); err != nil {
+			return Bundle{}, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE options SET chosen = 0 WHERE item_id IN (SELECT item_id FROM bundle_members WHERE bundle_id = ?)`, id); err != nil {
+		return Bundle{}, fmt.Errorf("choose bundle: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE options SET chosen = 1 WHERE id IN (SELECT option_id FROM bundle_members WHERE bundle_id = ?)`, id); err != nil {
+		return Bundle{}, fmt.Errorf("choose bundle: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE items SET status = ? WHERE id IN (SELECT item_id FROM bundle_members WHERE bundle_id = ?)`, StatusBought, id); err != nil {
+		return Bundle{}, fmt.Errorf("choose bundle: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Bundle{}, fmt.Errorf("choose bundle: %w", err)
+	}
+	return s.GetBundle(ctx, id)
+}
+
 func deleteBundleTx(ctx context.Context, tx *sql.Tx, id int64) error {
 	members, err := listBundleMembersTx(ctx, tx, id)
 	if err != nil {

@@ -363,6 +363,90 @@ func TestDeleteBundleMemberUnchoosesAndReallocates(t *testing.T) {
 	}
 }
 
+func TestChooseBundleDisplacesConflictsAndNormalChoices(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	a := mustAdd(t, s, ItemInput{Name: "Cot", Category: "Nursery"})
+	b := mustAdd(t, s, ItemInput{Name: "Pram", Category: "Travel"})
+	c := mustAdd(t, s, ItemInput{Name: "Monitor", Category: "Nursery"})
+	d := mustAdd(t, s, ItemInput{Name: "Carrier", Category: "Travel"})
+	normalA := mustAddOption(t, s, a.ID, OptionInput{URL: "https://shop.example.com/normal-a"})
+	normalB := mustAddOption(t, s, b.ID, OptionInput{URL: "https://shop.example.com/normal-b"})
+
+	target, err := s.AddBundle(ctx, BundleInput{Name: "Target", URL: "https://shop.example.com/target", Price: "20", Members: []BundleMemberInput{{ItemID: a.ID}, {ItemID: b.ID}}})
+	if err != nil {
+		t.Fatalf("AddBundle target: %v", err)
+	}
+	first, err := s.AddBundle(ctx, BundleInput{Name: "First", URL: "https://shop.example.com/first", Price: "20", Members: []BundleMemberInput{{ItemID: a.ID}, {ItemID: c.ID}}})
+	if err != nil {
+		t.Fatalf("AddBundle first: %v", err)
+	}
+	second, err := s.AddBundle(ctx, BundleInput{Name: "Second", URL: "https://shop.example.com/second", Price: "20", Members: []BundleMemberInput{{ItemID: b.ID}, {ItemID: d.ID}}})
+	if err != nil {
+		t.Fatalf("AddBundle second: %v", err)
+	}
+	if _, err := s.db.Exec(`
+		UPDATE options SET chosen = 1 WHERE id IN (SELECT option_id FROM bundle_members WHERE bundle_id IN (?, ?));
+		UPDATE options SET chosen = 1 WHERE id IN (?, ?);
+		UPDATE items SET status = ? WHERE id IN (?, ?, ?, ?);`, first.ID, second.ID, normalA.ID, normalB.ID, StatusBought, a.ID, b.ID, c.ID, d.ID); err != nil {
+		t.Fatalf("choose fixture: %v", err)
+	}
+
+	chosen, err := s.ChooseBundle(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("ChooseBundle: %v", err)
+	}
+	if chosen.ID != target.ID {
+		t.Errorf("chosen bundle = %d, want %d", chosen.ID, target.ID)
+	}
+	for _, member := range target.Members {
+		assertChosen(t, s, member.ItemID, member.OptionID)
+		item, err := s.Get(ctx, member.ItemID)
+		if err != nil || item.Status != StatusBought {
+			t.Errorf("target item %d = %+v, %v", member.ItemID, item, err)
+		}
+	}
+	for _, bundle := range []Bundle{first, second} {
+		for _, member := range bundle.Members {
+			option, err := s.GetOption(ctx, member.OptionID)
+			if err != nil || option.Chosen {
+				t.Errorf("displaced option %d = %+v, %v", member.OptionID, option, err)
+			}
+			if member.ItemID == a.ID || member.ItemID == b.ID {
+				continue
+			}
+			item, err := s.Get(ctx, member.ItemID)
+			if err != nil || item.Status != StatusNeeded {
+				t.Errorf("displaced item %d = %+v, %v", member.ItemID, item, err)
+			}
+		}
+	}
+}
+
+func TestChooseMissingBundleLeavesChoicesUnchanged(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	first := mustAdd(t, s, ItemInput{Name: "Cot", Category: "Nursery"})
+	second := mustAdd(t, s, ItemInput{Name: "Pram", Category: "Travel"})
+	bundle, err := s.AddBundle(ctx, BundleInput{Name: "Set", URL: "https://shop.example.com/set", Price: "20", Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: second.ID}}})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+	if _, err := s.ChooseBundle(ctx, bundle.ID); err != nil {
+		t.Fatalf("ChooseBundle: %v", err)
+	}
+	if _, err := s.ChooseBundle(ctx, 9999); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("ChooseBundle missing = %v, want %v", err, ErrNotFound)
+	}
+	for _, member := range bundle.Members {
+		assertChosen(t, s, member.ItemID, member.OptionID)
+		item, err := s.Get(ctx, member.ItemID)
+		if err != nil || item.Status != StatusBought {
+			t.Errorf("item %d after failure = %+v, %v", member.ItemID, item, err)
+		}
+	}
+}
+
 func TestBundleCommentCRUD(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
