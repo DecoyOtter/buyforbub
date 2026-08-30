@@ -46,7 +46,11 @@ func moneyText(centsValue *int64) string {
 	if centsValue == nil {
 		return ""
 	}
-	whole, cents := *centsValue/100, *centsValue%100
+	return FormatMoney(*centsValue)
+}
+
+func FormatMoney(centsValue int64) string {
+	whole, cents := centsValue/100, centsValue%100
 	if cents == 0 {
 		return "$" + addThousands(strconv.FormatInt(whole, 10))
 	}

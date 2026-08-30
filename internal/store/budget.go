@@ -9,6 +9,12 @@ type BudgetSummary struct {
 	UnknownActual      int
 }
 
+func (s BudgetSummary) ActualText() string       { return FormatMoney(s.ActualCents) }
+func (s BudgetSummary) StillPlannedText() string { return FormatMoney(s.StillPlannedCents) }
+func (s BudgetSummary) ExpectedTotalText() string {
+	return FormatMoney(s.ExpectedTotalCents)
+}
+
 type BudgetSummaries struct {
 	Categories map[string]BudgetSummary
 	Overall    BudgetSummary

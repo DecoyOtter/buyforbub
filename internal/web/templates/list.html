@@ -4,9 +4,23 @@
     {{if .Total}}<progress class="progress__bar" value="{{.Done}}" max="{{.Total}}"></progress>{{end}}
   </section>
 
+  {{if .Total}}<section class="budget-total" aria-label="Whole list budget">
+    <div><span>Actual</span><strong>{{.Overall.ActualText}}</strong></div>
+    <div><span>Still planned</span><strong>{{.Overall.StillPlannedText}}</strong></div>
+    <div><span>Expected total</span><strong>{{.Overall.ExpectedTotalText}}</strong></div>
+    {{if or .Overall.UnbudgetedNeeded .Overall.UnknownActual}}<p class="budget-total__counts">
+      {{if .Overall.UnbudgetedNeeded}}{{if eq .Overall.UnbudgetedNeeded 1}}1 item needs a budget{{else}}{{.Overall.UnbudgetedNeeded}} items need budgets{{end}}{{end}}{{if and .Overall.UnbudgetedNeeded .Overall.UnknownActual}} &middot; {{end}}{{if .Overall.UnknownActual}}{{if eq .Overall.UnknownActual 1}}1 bought item has an unknown actual{{else}}{{.Overall.UnknownActual}} bought items have unknown actuals{{end}}{{end}}
+    </p>{{end}}
+  </section>{{end}}
+
   {{range .Groups}}
   <section class="group">
-    <h2 class="group__title">{{.Category}}</h2>
+    <div class="group__head">
+      <h2 class="group__title">{{.Category}}</h2>
+      <p><strong>{{.Summary.ActualText}} actual</strong><span>{{.Summary.StillPlannedText}} planned</span></p>
+    </div>
+    <progress class="group__meter" value="{{.Summary.ActualCents}}" max="{{if .Summary.ExpectedTotalCents}}{{.Summary.ExpectedTotalCents}}{{else}}1{{end}}"
+              aria-label="{{.Category}}: {{.Summary.ActualText}} actual of {{.Summary.ExpectedTotalText}} expected"></progress>
     <ul class="items">
       {{range .Items}}{{template "row" .}}{{end}}
     </ul>
