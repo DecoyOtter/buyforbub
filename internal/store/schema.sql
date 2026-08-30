@@ -4,8 +4,9 @@ CREATE TABLE IF NOT EXISTS items (
     qty        INTEGER NOT NULL DEFAULT 1,
     category   TEXT    NOT NULL,
     status     TEXT    NOT NULL DEFAULT 'needed',
-    notes      TEXT    NOT NULL DEFAULT '',
-    created_at TEXT    NOT NULL
+    notes        TEXT    NOT NULL DEFAULT '',
+    budget_cents INTEGER,
+    created_at   TEXT    NOT NULL
 );
 
 -- Candidate products for an item: usually a link to something being considered.

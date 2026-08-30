@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -104,7 +105,7 @@ func parsePrice(s string) (*int64, error) {
 	}
 
 	f, err := strconv.ParseFloat(s, 64)
-	if err != nil || f < 0 {
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || f < 0 || f > float64(math.MaxInt64)/100 {
 		return nil, ErrInvalidPrice
 	}
 	cents := int64(f*100 + 0.5)
