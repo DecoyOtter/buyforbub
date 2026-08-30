@@ -187,6 +187,89 @@ func (s *Store) UpdateBundle(ctx context.Context, id int64, in BundleInput) (Bun
 	return s.GetBundle(ctx, id)
 }
 
+// DeleteBundle removes a package and all of its generated options.
+func (s *Store) DeleteBundle(ctx context.Context, id int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("delete bundle: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := deleteBundleTx(ctx, tx, id); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("delete bundle: %w", err)
+	}
+	return nil
+}
+
+func deleteBundleTx(ctx context.Context, tx *sql.Tx, id int64) error {
+	members, err := listBundleMembersTx(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if len(members) == 0 {
+		var found int
+		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM bundles WHERE id = ?`, id).Scan(&found); errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		} else if err != nil {
+			return fmt.Errorf("delete bundle: %w", err)
+		}
+	}
+	if err := unchooseBundleTx(ctx, tx, id); err != nil {
+		return err
+	}
+	for _, member := range members {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM options WHERE id = ?`, member.OptionID); err != nil {
+			return fmt.Errorf("delete bundle: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM bundles WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete bundle: %w", err)
+	}
+	return nil
+}
+
+func unchooseBundleTx(ctx context.Context, tx *sql.Tx, id int64) error {
+	var chosen bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM bundle_members bm JOIN options o ON o.id = bm.option_id WHERE bm.bundle_id = ? AND o.chosen = 1)`, id).Scan(&chosen); err != nil {
+		return fmt.Errorf("bundle lifecycle: %w", err)
+	}
+	if !chosen {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE options SET chosen = 0 WHERE id IN (SELECT option_id FROM bundle_members WHERE bundle_id = ?)`, id); err != nil {
+		return fmt.Errorf("bundle lifecycle: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE items SET status = ? WHERE id IN (SELECT item_id FROM bundle_members WHERE bundle_id = ?)`, StatusNeeded, id); err != nil {
+		return fmt.Errorf("bundle lifecycle: %w", err)
+	}
+	return nil
+}
+
+func reallocateBundleTx(ctx context.Context, tx *sql.Tx, id int64) error {
+	var price int64
+	if err := tx.QueryRowContext(ctx, `SELECT price_cents FROM bundles WHERE id = ?`, id).Scan(&price); err != nil {
+		return fmt.Errorf("delete item: %w", err)
+	}
+	members, err := listBundleMembersTx(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	share, remainder := price/int64(len(members)), price%int64(len(members))
+	for i, member := range members {
+		allocated := share
+		if int64(i) < remainder {
+			allocated++
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE options SET price_cents = ? WHERE id = ?`, allocated, member.OptionID); err != nil {
+			return fmt.Errorf("delete item: %w", err)
+		}
+	}
+	return nil
+}
+
 func listBundleMembersTx(ctx context.Context, tx *sql.Tx, bundleID int64) ([]BundleMember, error) {
 	rows, err := tx.QueryContext(ctx, selectBundleMemberColumns+` WHERE bundle_id = ? ORDER BY position`, bundleID)
 	if err != nil {

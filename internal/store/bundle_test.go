@@ -252,6 +252,117 @@ func TestUpdateBundleFailureLeavesDataUnchanged(t *testing.T) {
 	}
 }
 
+func TestDeleteBundleRemovesGeneratedDataAndUnchoosesMembers(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	first := mustAdd(t, s, ItemInput{Name: "Cot", Category: "Nursery"})
+	second := mustAdd(t, s, ItemInput{Name: "Pram", Category: "Travel"})
+	normal := mustAddOption(t, s, first.ID, OptionInput{URL: "https://shop.example.com/normal"})
+	if _, err := s.AddComment(ctx, normal.ID, "keep"); err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+	bundle, err := s.AddBundle(ctx, BundleInput{Name: "Set", URL: "https://shop.example.com/set", Price: "10", Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: second.ID}}})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+	if _, err := s.AddComment(ctx, bundle.Members[0].OptionID, "remove"); err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+	if _, err := s.AddBundleComment(ctx, bundle.ID, "remove shared"); err != nil {
+		t.Fatalf("AddBundleComment: %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE options SET chosen = 1 WHERE id IN (SELECT option_id FROM bundle_members WHERE bundle_id = ?); UPDATE items SET status = ? WHERE id IN (SELECT item_id FROM bundle_members WHERE bundle_id = ?)`, bundle.ID, StatusBought, bundle.ID); err != nil {
+		t.Fatalf("choose fixture: %v", err)
+	}
+
+	if err := s.DeleteBundle(ctx, bundle.ID); err != nil {
+		t.Fatalf("DeleteBundle: %v", err)
+	}
+	if _, err := s.GetBundle(ctx, bundle.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetBundle after delete = %v, want %v", err, ErrNotFound)
+	}
+	for _, member := range bundle.Members {
+		if _, err := s.GetOption(ctx, member.OptionID); !errors.Is(err, ErrNotFound) {
+			t.Errorf("generated option %d after delete = %v, want %v", member.OptionID, err, ErrNotFound)
+		}
+	}
+	for _, itemID := range []int64{first.ID, second.ID} {
+		item, err := s.Get(ctx, itemID)
+		if err != nil || item.Status != StatusNeeded {
+			t.Errorf("item %d after delete = %+v, %v", itemID, item, err)
+		}
+	}
+	if comments, err := s.ListComments(ctx, normal.ID); err != nil || len(comments) != 1 || comments[0].Body != "keep" {
+		t.Errorf("normal comments = %+v, %v", comments, err)
+	}
+	for _, table := range []string{"bundle_members", "bundle_comments"} {
+		var count int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil || count != 0 {
+			t.Errorf("%s after delete = %d, %v; want 0", table, count, err)
+		}
+	}
+}
+
+func TestDeleteBundleMemberUnchoosesAndReallocates(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	first := mustAdd(t, s, ItemInput{Name: "Cot", Category: "Nursery"})
+	second := mustAdd(t, s, ItemInput{Name: "Pram", Category: "Travel"})
+	third := mustAdd(t, s, ItemInput{Name: "Monitor", Category: "Nursery"})
+	fourth := mustAdd(t, s, ItemInput{Name: "Carrier", Category: "Travel"})
+	kept := mustAddOption(t, s, fourth.ID, OptionInput{URL: "https://shop.example.com/keep"})
+	if _, err := s.AddComment(ctx, kept.ID, "keep"); err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+	bundle, err := s.AddBundle(ctx, BundleInput{Name: "Large", URL: "https://shop.example.com/large", Price: "0.05", Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: second.ID}, {ItemID: third.ID}}})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+	removed, err := s.AddBundle(ctx, BundleInput{Name: "Small", URL: "https://shop.example.com/small", Price: "8", Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: fourth.ID}}})
+	if err != nil {
+		t.Fatalf("AddBundle small: %v", err)
+	}
+	if _, err := s.AddBundleComment(ctx, bundle.ID, "keep shared"); err != nil {
+		t.Fatalf("AddBundleComment: %v", err)
+	}
+	if _, err := s.AddBundleComment(ctx, removed.ID, "remove shared"); err != nil {
+		t.Fatalf("AddBundleComment: %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE options SET chosen = 1 WHERE id IN (SELECT option_id FROM bundle_members WHERE bundle_id = ?); UPDATE items SET status = ? WHERE id IN (SELECT item_id FROM bundle_members WHERE bundle_id = ?)`, bundle.ID, StatusBought, bundle.ID); err != nil {
+		t.Fatalf("choose fixture: %v", err)
+	}
+
+	if err := s.Delete(ctx, first.ID); err != nil {
+		t.Fatalf("Delete item: %v", err)
+	}
+	updated, err := s.GetBundle(ctx, bundle.ID)
+	if err != nil {
+		t.Fatalf("GetBundle: %v", err)
+	}
+	if len(updated.Members) != 2 || updated.Members[0].ItemID != second.ID || updated.Members[1].ItemID != third.ID {
+		t.Fatalf("remaining members = %+v", updated.Members)
+	}
+	for i, member := range updated.Members {
+		option, err := s.GetOption(ctx, member.OptionID)
+		if err != nil || option.Chosen || option.PriceCents == nil || *option.PriceCents != []int64{3, 2}[i] {
+			t.Errorf("remaining option %d = %+v, %v", i, option, err)
+		}
+		item, err := s.Get(ctx, member.ItemID)
+		if err != nil || item.Status != StatusNeeded {
+			t.Errorf("remaining item %d = %+v, %v", member.ItemID, item, err)
+		}
+	}
+	if comments, err := s.ListBundleComments(ctx, bundle.ID); err != nil || len(comments) != 1 || comments[0].Body != "keep shared" {
+		t.Errorf("surviving bundle comments = %+v, %v", comments, err)
+	}
+	if _, err := s.GetBundle(ctx, removed.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("small bundle after item delete = %v, want %v", err, ErrNotFound)
+	}
+	if comments, err := s.ListComments(ctx, kept.ID); err != nil || len(comments) != 1 || comments[0].Body != "keep" {
+		t.Errorf("unrelated option comments = %+v, %v", comments, err)
+	}
+}
+
 func TestBundleCommentCRUD(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
