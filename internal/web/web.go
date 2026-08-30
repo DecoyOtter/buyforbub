@@ -84,16 +84,9 @@ type pageData struct {
 }
 
 type listData struct {
-	Groups  []groupData
-	Overall store.BudgetSummary
-	Done    int
-	Total   int
-}
-
-type groupData struct {
-	Category string
-	Items    []store.Item
-	Summary  store.BudgetSummary
+	Groups []store.CategoryGroup
+	Done   int
+	Total  int
 }
 
 // detailData backs the expanded panel, and the edit form nested inside it.
@@ -230,7 +223,7 @@ func (s *Server) handleAddOption(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.renderList(w, r)
+	s.renderDetail(w, r, id, false)
 }
 
 func (s *Server) handleDeleteOption(w http.ResponseWriter, r *http.Request) {
@@ -238,7 +231,9 @@ func (s *Server) handleDeleteOption(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, err := s.store.GetOption(r.Context(), id); err != nil {
+	// Read it first, so the panel can be re-rendered for the right item.
+	opt, err := s.store.GetOption(r.Context(), id)
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -246,7 +241,7 @@ func (s *Server) handleDeleteOption(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.renderList(w, r)
+	s.renderDetail(w, r, opt.ItemID, false)
 }
 
 // handleChooseOption records the option that was bought. That also marks the
@@ -322,17 +317,7 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 		return listData{}, err
 	}
 	done, total := store.Progress(items)
-	prices, err := s.store.ChosenOptionPrices(ctx)
-	if err != nil {
-		return listData{}, err
-	}
-	summaries, overall := store.Summarize(items, prices)
-	groups := store.GroupByCategory(items)
-	data := make([]groupData, 0, len(groups))
-	for _, group := range groups {
-		data = append(data, groupData{Category: group.Category, Items: group.Items, Summary: summaries[group.Category]})
-	}
-	return listData{Groups: data, Overall: overall, Done: done, Total: total}, nil
+	return listData{Groups: store.GroupByCategory(items), Done: done, Total: total}, nil
 }
 
 func (s *Server) renderDetail(w http.ResponseWriter, r *http.Request, id int64, editing bool) {
@@ -398,7 +383,6 @@ func parseItemInput(r *http.Request) (store.ItemInput, error) {
 		Qty:      qty,
 		Category: r.PostFormValue("category"),
 		Notes:    r.PostFormValue("notes"),
-		Budget:   r.PostFormValue("budget"),
 	}, nil
 }
 
@@ -430,8 +414,6 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "That does not look like a link.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidPrice):
 		http.Error(w, "Price should be a number.", http.StatusBadRequest)
-	case errors.Is(err, store.ErrInvalidBudget):
-		http.Error(w, "Budget should be a number.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidComment):
 		http.Error(w, "Write something first.", http.StatusBadRequest)
 	case errors.Is(err, errBadRequest):

@@ -83,32 +83,6 @@ func TestProgress(t *testing.T) {
 	}
 }
 
-func TestSummarize(t *testing.T) {
-	items := []Item{
-		{ID: 1, Category: "Nursery", Qty: 2, BudgetCents: cents(10000), Status: StatusBought},
-		{ID: 2, Category: "Nursery", BudgetCents: cents(5000), Status: StatusBought},
-		{ID: 3, Category: "Feeding", Status: StatusBought},
-		{ID: 4, Category: "Feeding", BudgetCents: cents(3000), Status: StatusBought},
-	}
-	byCategory, overall := Summarize(items, map[int64]*int64{
-		1: cents(10000), // Qty does not multiply money.
-		2: cents(6000),  // Over its category budget.
-		4: nil,          // Chosen but unpriced.
-	})
-
-	nursery := byCategory["Nursery"]
-	if nursery.BudgetCents != 15000 || nursery.ActualCents != 16000 || !nursery.Over() || nursery.DifferenceText() != "$10" {
-		t.Errorf("Nursery summary = %+v", nursery)
-	}
-	feeding := byCategory["Feeding"]
-	if feeding.BudgetCents != 3000 || feeding.ActualCents != 0 || feeding.Unbudgeted != 1 || feeding.UnknownActual != 2 || feeding.Over() {
-		t.Errorf("Feeding summary = %+v", feeding)
-	}
-	if overall.BudgetCents != 18000 || overall.ActualCents != 16000 || overall.Unbudgeted != 1 || overall.UnknownActual != 2 || overall.Over() || overall.DifferenceText() != "$20" {
-		t.Errorf("overall summary = %+v", overall)
-	}
-}
-
 func TestValidCategoryAndStatus(t *testing.T) {
 	for _, c := range Categories {
 		if !ValidCategory(c) {

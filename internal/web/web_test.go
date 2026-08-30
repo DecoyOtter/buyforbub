@@ -225,66 +225,6 @@ func TestEditFormAndCancel(t *testing.T) {
 	assertNotContains(t, body, `name="category"`)
 }
 
-func TestEditBudget(t *testing.T) {
-	s, st := newServer(t)
-	it := mustAdd(t, st, "Cot", "Nursery")
-
-	rec := do(t, s, http.MethodPost, "/items/"+itoa(it.ID), url.Values{
-		"name": {"Cot"}, "category": {"Nursery"}, "budget": {"$1,200"},
-	})
-	assertStatus(t, rec, http.StatusOK)
-	stored, err := st.Get(context.Background(), it.ID)
-	if err != nil || stored.BudgetText() != "$1,200" {
-		t.Fatalf("stored budget = %q, %v", stored.BudgetText(), err)
-	}
-	rec = do(t, s, http.MethodGet, "/items/"+itoa(it.ID)+"/edit", nil)
-	assertContains(t, rec.Body.String(), `name="budget" value="$1,200"`)
-
-	rec = do(t, s, http.MethodPost, "/items/"+itoa(it.ID), url.Values{
-		"name": {"Cot"}, "category": {"Nursery"}, "budget": {""},
-	})
-	assertStatus(t, rec, http.StatusOK)
-	stored, _ = st.Get(context.Background(), it.ID)
-	if stored.BudgetCents != nil {
-		t.Errorf("cleared budget = %v, want nil", stored.BudgetCents)
-	}
-
-	rec = do(t, s, http.MethodPost, "/items/"+itoa(it.ID), url.Values{
-		"name": {"Cot"}, "category": {"Nursery"}, "budget": {"lots"},
-	})
-	assertStatus(t, rec, http.StatusBadRequest)
-	assertContains(t, rec.Body.String(), "Budget should be a number")
-}
-
-func TestBudgetSummaries(t *testing.T) {
-	s, st := newServer(t)
-	cot, err := st.Add(context.Background(), store.ItemInput{Name: "Cot", Category: "Nursery", Budget: "100"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	bottles, err := st.Add(context.Background(), store.ItemInput{Name: "Bottles", Category: "Feeding"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	opt := mustAddOption(t, st, cot.ID, store.OptionInput{URL: "https://example.com/cot", Price: "120"})
-	if _, err := st.ChooseOption(context.Background(), opt.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.Toggle(context.Background(), bottles.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	rec := do(t, s, http.MethodGet, "/", nil)
-	assertStatus(t, rec, http.StatusOK)
-	body := rec.Body.String()
-	assertContains(t, body, "Budget <strong>$100</strong>")
-	assertContains(t, body, "Actual <strong>$120</strong>")
-	assertContains(t, body, "Over by $20")
-	assertContains(t, body, "1 unbudgeted item")
-	assertContains(t, body, "1 unknown actual")
-	assertContains(t, body, "Whole list")
-}
-
 func TestUpdate(t *testing.T) {
 	s, st := newServer(t)
 	it := mustAdd(t, st, "Cot", "Nursery")

@@ -20,7 +20,6 @@ var (
 	ErrInvalidName     = errors.New("name is required")
 	ErrInvalidCategory = errors.New("unknown category")
 	ErrInvalidStatus   = errors.New("unknown status")
-	ErrInvalidBudget   = errors.New("budget is not a number")
 )
 
 // Item is one thing to buy.
@@ -31,14 +30,11 @@ type Item struct {
 	Category    string
 	Status      string
 	Notes       string
-	BudgetCents *int64
 	CreatedAt   time.Time
 	OptionCount int
 }
 
 func (i Item) Bought() bool { return i.Status == StatusBought }
-
-func (i Item) BudgetText() string { return moneyText(i.BudgetCents) }
 
 // ItemInput is the user-supplied half of an item; status is managed separately.
 type ItemInput struct {
@@ -46,7 +42,6 @@ type ItemInput struct {
 	Qty      int    `json:"qty"`
 	Category string `json:"category"`
 	Notes    string `json:"notes,omitempty"`
-	Budget   string `json:"budget,omitempty"`
 }
 
 // clean trims, applies defaults, and rejects anything unusable.
@@ -54,7 +49,6 @@ func (in ItemInput) clean() (ItemInput, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	in.Notes = strings.TrimSpace(in.Notes)
 	in.Category = strings.TrimSpace(in.Category)
-	in.Budget = strings.TrimSpace(in.Budget)
 
 	if in.Name == "" {
 		return in, ErrInvalidName
@@ -64,9 +58,6 @@ func (in ItemInput) clean() (ItemInput, error) {
 	}
 	if in.Qty < 1 {
 		in.Qty = 1
-	}
-	if _, err := parsePrice(in.Budget); err != nil {
-		return in, ErrInvalidBudget
 	}
 	return in, nil
 }
@@ -120,50 +111,4 @@ func Progress(items []Item) (done, total int) {
 		}
 	}
 	return done, len(items)
-}
-
-// BudgetSummary is the known spending position for one category or the list.
-type BudgetSummary struct {
-	BudgetCents   int64
-	ActualCents   int64
-	Unbudgeted    int
-	UnknownActual int
-}
-
-func (s BudgetSummary) BudgetText() string { return moneyText(&s.BudgetCents) }
-func (s BudgetSummary) ActualText() string { return moneyText(&s.ActualCents) }
-func (s BudgetSummary) Over() bool         { return s.ActualCents > s.BudgetCents }
-func (s BudgetSummary) DifferenceText() string {
-	difference := s.BudgetCents - s.ActualCents
-	if difference < 0 {
-		difference = -difference
-	}
-	return moneyText(&difference)
-}
-
-// Summarize budgets items by category and for the complete list. A map entry
-// records a chosen option; nil means that chosen option has no price.
-func Summarize(items []Item, chosenPrices map[int64]*int64) (map[string]BudgetSummary, BudgetSummary) {
-	byCategory := make(map[string]BudgetSummary, len(Categories))
-	var overall BudgetSummary
-	for _, item := range items {
-		summary := byCategory[item.Category]
-		addSummary(&summary, item, chosenPrices)
-		byCategory[item.Category] = summary
-		addSummary(&overall, item, chosenPrices)
-	}
-	return byCategory, overall
-}
-
-func addSummary(summary *BudgetSummary, item Item, chosenPrices map[int64]*int64) {
-	if item.BudgetCents == nil {
-		summary.Unbudgeted++
-	} else {
-		summary.BudgetCents += *item.BudgetCents
-	}
-	if price, chosen := chosenPrices[item.ID]; chosen && price != nil {
-		summary.ActualCents += *price
-	} else if item.Bought() {
-		summary.UnknownActual++
-	}
 }

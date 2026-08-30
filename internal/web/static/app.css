@@ -140,38 +140,6 @@ input[type="text"], input[type="number"], select {
   text-transform: uppercase;
 }
 
-.summary {
-  margin: 8px 4px 0;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.summary__amounts, .summary__counts { margin: 0; }
-
-.summary__amounts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 12px;
-}
-
-.summary strong { color: var(--text); font-weight: 650; }
-.summary__over strong { color: var(--danger); }
-.summary__counts { margin-top: 2px; }
-.summary--overall {
-  margin: 0;
-  padding: 14px 0 0;
-  border-top: 1px solid var(--border);
-}
-.summary__title {
-  margin: 0 0 4px;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 650;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
 .items {
   margin: 0;
   padding: 0;
@@ -537,8 +505,7 @@ input[type="text"], input[type="number"], select {
 }
 
 .edit__field--category,
-.edit__field--notes,
-.edit__field--budget { grid-column: 1 / -1; }
+.edit__field--notes { grid-column: 1 / -1; }
 
 .edit__actions {
   grid-column: 1 / -1;

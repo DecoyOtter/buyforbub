@@ -3,7 +3,6 @@ package store
 import (
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -39,14 +38,10 @@ func (o Option) Title() string {
 
 // PriceText formats the price for display, or returns "" when there is none.
 func (o Option) PriceText() string {
-	return moneyText(o.PriceCents)
-}
-
-func moneyText(centsValue *int64) string {
-	if centsValue == nil {
+	if o.PriceCents == nil {
 		return ""
 	}
-	whole, cents := *centsValue/100, *centsValue%100
+	whole, cents := *o.PriceCents/100, *o.PriceCents%100
 	if cents == 0 {
 		return "$" + addThousands(strconv.FormatInt(whole, 10))
 	}
@@ -109,7 +104,7 @@ func parsePrice(s string) (*int64, error) {
 	}
 
 	f, err := strconv.ParseFloat(s, 64)
-	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || f < 0 {
+	if err != nil || f < 0 {
 		return nil, ErrInvalidPrice
 	}
 	cents := int64(f*100 + 0.5)
