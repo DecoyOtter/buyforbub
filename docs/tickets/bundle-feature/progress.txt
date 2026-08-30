@@ -1,0 +1,18 @@
+## Codebase Patterns
+
+- Schema changes are additive through `schema.sql` on every `store.Open`; cover old-database compatibility with a fixture that predates the new tables.
+- Bundle creation validates all members before inserting, then creates generated Options and memberships in one transaction.
+
+## 2026-08-30 20:08 - US-001
+- Implemented: Bundle vocabulary and additive Bundle persistence schema
+- Changed: CONTEXT.md, internal/store/schema.sql, internal/store/bundle.go, internal/store/bundle_test.go
+- Verified: go build ./..., go vet ./..., go test ./..., git diff --check
+- Learnings: Generated Options stay in options; later Bundle lifecycle transactions own their deletion
+---
+
+## 2026-08-30 20:26 - US-002
+- Implemented: Bundle creation, ordered reads, strict validation, exact-cent allocation
+- Changed: internal/store/bundle.go, internal/store/store_bundle.go, internal/store/bundle_test.go, docs/tickets/bundle-feature/prd.md
+- Verified: go build ./..., go vet ./..., go test ./..., git diff --check
+- Learnings: Close parent query rows before member lookups with the Store's single SQLite connection
+---

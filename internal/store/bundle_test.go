@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 )
@@ -82,5 +83,93 @@ func TestBundleSchemaRelationships(t *testing.T) {
 		if err := s.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil || count != 0 {
 			t.Errorf("%s after bundle delete = %d, %v; want 0", table, count, err)
 		}
+	}
+}
+
+func TestAddBundleAllocatesOrderedShares(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	first := mustAdd(t, s, ItemInput{Name: "Cot", Qty: 3, Category: "Nursery"})
+	second := mustAdd(t, s, ItemInput{Name: "Pram", Category: "Travel"})
+	third := mustAdd(t, s, ItemInput{Name: "Monitor", Category: "Nursery"})
+
+	bundle, err := s.AddBundle(ctx, BundleInput{
+		Name: " Nursery set ", URL: "https://shop.example.com/set", Price: "100.00", RegularPrice: "120",
+		Members: []BundleMemberInput{
+			{ItemID: second.ID, ComponentLabel: " Pram frame "},
+			{ItemID: first.ID},
+			{ItemID: third.ID, ComponentLabel: " Monitor "},
+		},
+	})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+	if bundle.Name != "Nursery set" || bundle.URL != "https://shop.example.com/set" || bundle.PriceCents != 10000 {
+		t.Errorf("bundle = %+v", bundle)
+	}
+	if bundle.RegularPriceCents == nil || *bundle.RegularPriceCents != 12000 {
+		t.Errorf("RegularPriceCents = %v, want 12000", bundle.RegularPriceCents)
+	}
+	if len(bundle.Members) != 3 {
+		t.Fatalf("members = %d, want 3", len(bundle.Members))
+	}
+	wantItems := []int64{second.ID, first.ID, third.ID}
+	wantPrices := []int64{3334, 3333, 3333}
+	for i, member := range bundle.Members {
+		if member.Position != i || member.ItemID != wantItems[i] {
+			t.Errorf("member %d = %+v", i, member)
+		}
+		option, err := s.GetOption(ctx, member.OptionID)
+		if err != nil {
+			t.Fatalf("GetOption(%d): %v", member.OptionID, err)
+		}
+		if option.URL != bundle.URL || option.Chosen || option.PriceCents == nil || *option.PriceCents != wantPrices[i] {
+			t.Errorf("option %d = %+v", i, option)
+		}
+	}
+	if got, err := s.Get(ctx, first.ID); err != nil || got.Status != StatusNeeded {
+		t.Errorf("first item after bundle = %+v, %v", got, err)
+	}
+
+	all, err := s.ListBundles(ctx)
+	if err != nil || len(all) != 1 || all[0].ID != bundle.ID || len(all[0].Members) != 3 {
+		t.Errorf("ListBundles = %+v, %v", all, err)
+	}
+}
+
+func TestAddBundleRejectsInvalidInputWithoutWriting(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	first := mustAdd(t, s, ItemInput{Name: "Cot", Category: "Nursery"})
+	second := mustAdd(t, s, ItemInput{Name: "Pram", Category: "Travel"})
+	valid := BundleInput{Name: "Set", URL: "https://shop.example.com/set", Price: "10", Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: second.ID}}}
+
+	tests := []struct {
+		name string
+		in   BundleInput
+		want error
+	}{
+		{"blank name", BundleInput{URL: valid.URL, Price: valid.Price, Members: valid.Members}, ErrInvalidBundleName},
+		{"relative URL", BundleInput{Name: valid.Name, URL: "shop.example.com/set", Price: valid.Price, Members: valid.Members}, ErrInvalidURL},
+		{"three decimals", BundleInput{Name: valid.Name, URL: valid.URL, Price: "10.001", Members: valid.Members}, ErrInvalidBundlePrice},
+		{"zero price", BundleInput{Name: valid.Name, URL: valid.URL, Price: "0", Members: valid.Members}, ErrInvalidBundlePrice},
+		{"regular price below", BundleInput{Name: valid.Name, URL: valid.URL, Price: valid.Price, RegularPrice: "9", Members: valid.Members}, ErrInvalidRegularPrice},
+		{"one member", BundleInput{Name: valid.Name, URL: valid.URL, Price: valid.Price, Members: valid.Members[:1]}, ErrInvalidBundleMembership},
+		{"duplicate member", BundleInput{Name: valid.Name, URL: valid.URL, Price: valid.Price, Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: first.ID}}}, ErrInvalidBundleMembership},
+		{"missing member", BundleInput{Name: valid.Name, URL: valid.URL, Price: valid.Price, Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: 9999}}}, ErrNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := s.AddBundle(ctx, tt.in); !errors.Is(err, tt.want) {
+				t.Fatalf("AddBundle error = %v, want %v", err, tt.want)
+			}
+			var bundles, options int
+			if err := s.db.QueryRow(`SELECT COUNT(*) FROM bundles`).Scan(&bundles); err != nil || bundles != 0 {
+				t.Fatalf("bundles after failure = %d, %v", bundles, err)
+			}
+			if err := s.db.QueryRow(`SELECT COUNT(*) FROM options`).Scan(&options); err != nil || options != 0 {
+				t.Fatalf("options after failure = %d, %v", options, err)
+			}
+		})
 	}
 }
