@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -85,6 +86,7 @@ type pageData struct {
 
 type listData struct {
 	Groups  []groupData
+	Bundles []bundleData
 	Overall store.BudgetSummary
 	Done    int
 	Total   int
@@ -100,6 +102,50 @@ type itemData struct {
 	store.Item
 	ActualCents *int64
 }
+
+type bundleData struct {
+	store.Bundle
+	Members []bundleMemberData
+	Chosen  bool
+}
+
+func (b bundleData) PriceText() string { return store.FormatMoney(b.PriceCents) }
+
+func (b bundleData) RegularPriceText() string {
+	if b.RegularPriceCents == nil {
+		return ""
+	}
+	return store.FormatMoney(*b.RegularPriceCents)
+}
+
+func (b bundleData) SavingsText() string {
+	if b.RegularPriceCents == nil {
+		return ""
+	}
+	return store.FormatMoney(*b.RegularPriceCents - b.PriceCents)
+}
+
+func (b bundleData) SavingsPercent() int64 {
+	if b.RegularPriceCents == nil || *b.RegularPriceCents == 0 {
+		return 0
+	}
+	return int64(math.Round(float64((*b.RegularPriceCents-b.PriceCents)*100) / float64(*b.RegularPriceCents)))
+}
+
+type bundleMemberData struct {
+	ItemName       string
+	ComponentLabel string
+	ShareCents     int64
+}
+
+func (m bundleMemberData) Label() string {
+	if m.ComponentLabel != "" {
+		return m.ComponentLabel
+	}
+	return m.ItemName
+}
+
+func (m bundleMemberData) ShareText() string { return store.FormatMoney(m.ShareCents) }
 
 func (i itemData) ActualText() string {
 	if i.ActualCents == nil {
@@ -348,6 +394,33 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 	if err != nil {
 		return listData{}, err
 	}
+	bundles, err := s.store.ListBundles(ctx)
+	if err != nil {
+		return listData{}, err
+	}
+	itemsByID := make(map[int64]store.Item, len(items))
+	for _, item := range items {
+		itemsByID[item.ID] = item
+	}
+	bundleViews := make([]bundleData, 0, len(bundles))
+	for _, bundle := range bundles {
+		view := bundleData{Bundle: bundle, Members: make([]bundleMemberData, 0, len(bundle.Members))}
+		for _, member := range bundle.Members {
+			option, err := s.store.GetOption(ctx, member.OptionID)
+			if err != nil {
+				return listData{}, err
+			}
+			item, ok := itemsByID[member.ItemID]
+			if !ok || option.PriceCents == nil {
+				return listData{}, fmt.Errorf("bundle %d has incomplete member %d", bundle.ID, member.ID)
+			}
+			view.Members = append(view.Members, bundleMemberData{
+				ItemName: item.Name, ComponentLabel: member.ComponentLabel, ShareCents: *option.PriceCents,
+			})
+			view.Chosen = view.Chosen || option.Chosen
+		}
+		bundleViews = append(bundleViews, view)
+	}
 	done, total := store.Progress(items)
 	summaries := store.SummarizeBudgets(items, prices)
 	groups := store.GroupByCategory(items)
@@ -360,7 +433,7 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 		}
 		data = append(data, view)
 	}
-	return listData{Groups: data, Overall: summaries.Overall, Done: done, Total: total}, nil
+	return listData{Groups: data, Bundles: bundleViews, Overall: summaries.Overall, Done: done, Total: total}, nil
 }
 
 func newItemData(item store.Item, chosenPrices map[int64]*int64) itemData {

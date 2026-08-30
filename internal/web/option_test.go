@@ -106,11 +106,11 @@ func TestOptionCountShownOnRow(t *testing.T) {
 
 	mustAddOption(t, st, it.ID, store.OptionInput{URL: "https://a.example.com"})
 	rec = do(t, s, http.MethodGet, "/", nil)
-	assertContains(t, rec.Body.String(), "1 link<")
+	assertContains(t, rec.Body.String(), "1 option<")
 
 	mustAddOption(t, st, it.ID, store.OptionInput{URL: "https://b.example.com"})
 	rec = do(t, s, http.MethodGet, "/", nil)
-	assertContains(t, rec.Body.String(), "2 links<")
+	assertContains(t, rec.Body.String(), "2 options<")
 }
 
 func TestChooseOptionMarksItemBought(t *testing.T) {

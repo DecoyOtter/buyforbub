@@ -1,4 +1,24 @@
 {{define "list"}}<div id="list" class="list">
+  {{if .Bundles}}<aside class="bundle-rail" aria-label="Bundles">
+    <div class="bundle-rail__head"><h2>Bundles</h2><span>{{len .Bundles}}</span></div>
+    <div class="bundle-rail__cards">
+      {{range .Bundles}}<details class="bundle-card{{if .Chosen}} is-chosen{{end}}">
+        <summary class="bundle-card__summary">
+          <span class="bundle-card__name">{{.Name}}</span>
+          <span class="bundle-card__price">{{.PriceText}}</span>
+          <span class="bundle-card__meta">{{len .Members}} items{{if .Chosen}} · Chosen{{end}}</span>
+        </summary>
+        <div class="bundle-card__body">
+          <a class="bundle-card__url" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.URL}}</a>
+          {{if .RegularPriceCents}}<p class="bundle-card__saving">Regular {{.RegularPriceText}} · Save {{.SavingsText}} ({{.SavingsPercent}}%)</p>{{end}}
+          <ul class="bundle-card__members">
+            {{range .Members}}<li><span>{{.Label}}</span><strong>{{.ShareText}}</strong></li>{{end}}
+          </ul>
+        </div>
+      </details>{{end}}
+    </div>
+  </aside>{{end}}
+  <div class="checklist">
   <section class="progress">
     <p class="progress__text" aria-live="polite">{{.Done}} of {{.Total}} done</p>
     {{if .Total}}<progress class="progress__bar" value="{{.Done}}" max="{{.Total}}"></progress>{{end}}
@@ -28,5 +48,6 @@
   {{else}}
   <p class="empty">Nothing on the list yet. Add the first thing above.</p>
   {{end}}
+  </div>
 </div>
 {{end}}

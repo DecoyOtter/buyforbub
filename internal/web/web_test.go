@@ -105,6 +105,44 @@ func TestIndexWhenEmpty(t *testing.T) {
 	assertContains(t, rec.Body.String(), "Nothing on the list yet")
 }
 
+func TestBundleRailRendersOrderedCards(t *testing.T) {
+	s, st := newServer(t)
+	cot := mustAdd(t, st, "Cot", "Nursery")
+	pram := mustAdd(t, st, "Pram", "Travel")
+	seat := mustAdd(t, st, "Car seat", "Travel")
+	first, err := st.AddBundle(context.Background(), store.BundleInput{
+		Name: "Sleep bundle", URL: "https://shop.example/sleep", Price: "100", RegularPrice: "150",
+		Members: []store.BundleMemberInput{{ItemID: cot.ID, ComponentLabel: "Cot frame"}, {ItemID: pram.ID}},
+	})
+	if err != nil {
+		t.Fatalf("AddBundle first: %v", err)
+	}
+	if _, err := st.ChooseBundle(context.Background(), first.ID); err != nil {
+		t.Fatalf("ChooseBundle: %v", err)
+	}
+	if _, err := st.AddBundle(context.Background(), store.BundleInput{
+		Name: "Travel bundle", URL: "https://shop.example/travel", Price: "99.99",
+		Members: []store.BundleMemberInput{{ItemID: pram.ID}, {ItemID: seat.ID}},
+	}); err != nil {
+		t.Fatalf("AddBundle second: %v", err)
+	}
+
+	rec := do(t, s, http.MethodGet, "/", nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `class="bundle-rail"`)
+	assertContains(t, body, "Sleep bundle")
+	assertContains(t, body, "https://shop.example/sleep")
+	assertContains(t, body, "2 items · Chosen")
+	assertContains(t, body, "Regular $150 · Save $50 (33%)")
+	assertContains(t, body, "Cot frame")
+	assertContains(t, body, "Pram")
+	assertContains(t, body, "$50")
+	assertOrder(t, body, "Sleep bundle", "Travel bundle")
+	assertContains(t, body, `id="list"`)
+	assertContains(t, body, `class="checklist"`)
+}
+
 func TestAdd(t *testing.T) {
 	tests := []struct {
 		name       string
