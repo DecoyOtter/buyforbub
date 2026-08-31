@@ -10,8 +10,10 @@ import (
 	"html/template"
 	"io/fs"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/DecoyOtter/buyforbub/internal/store"
 )
@@ -60,6 +62,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.Serve
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
 	s.mux.HandleFunc("POST /items", s.handleAdd)
+	s.mux.HandleFunc("POST /bundles", s.handleAddBundle)
+	s.mux.HandleFunc("POST /bundles/{bid}", s.handleUpdateBundle)
+	s.mux.HandleFunc("POST /bundles/{bid}/delete", s.handleDeleteBundle)
+	s.mux.HandleFunc("POST /bundles/{bid}/choose", s.handleChooseBundle)
+	s.mux.HandleFunc("POST /bundles/{bid}/comments", s.handleAddBundleComment)
+	s.mux.HandleFunc("POST /bundle-comments/{cid}/delete", s.handleDeleteBundleComment)
 	s.mux.HandleFunc("GET /items/{id}", s.handleDetail)
 	s.mux.HandleFunc("POST /items/{id}", s.handleUpdate)
 	s.mux.HandleFunc("GET /items/{id}/row", s.handleRow)
@@ -84,10 +92,12 @@ type pageData struct {
 }
 
 type listData struct {
-	Groups  []groupData
-	Overall store.BudgetSummary
-	Done    int
-	Total   int
+	Groups      []groupData
+	Bundles     []bundleData
+	BundleItems []bundleItemGroupData
+	Overall     store.BudgetSummary
+	Done        int
+	Total       int
 }
 
 type groupData struct {
@@ -99,6 +109,81 @@ type groupData struct {
 type itemData struct {
 	store.Item
 	ActualCents *int64
+}
+
+type bundleData struct {
+	store.Bundle
+	Members       []bundleMemberData
+	Comments      []store.BundleComment
+	EditItems     []bundleItemGroupData
+	Chosen        bool
+	AffectedItems string
+	ChooseConfirm string
+}
+
+func (b bundleData) PriceText() string { return store.FormatMoney(b.PriceCents) }
+
+func (b bundleData) PriceInput() string { return centsInput(b.PriceCents) }
+
+func (b bundleData) RegularPriceText() string {
+	if b.RegularPriceCents == nil {
+		return ""
+	}
+	return store.FormatMoney(*b.RegularPriceCents)
+}
+
+func (b bundleData) RegularPriceInput() string {
+	if b.RegularPriceCents == nil {
+		return ""
+	}
+	return centsInput(*b.RegularPriceCents)
+}
+
+func centsInput(cents int64) string {
+	return fmt.Sprintf("%d.%02d", cents/100, cents%100)
+}
+
+func (b bundleData) SavingsText() string {
+	if b.RegularPriceCents == nil {
+		return ""
+	}
+	return store.FormatMoney(*b.RegularPriceCents - b.PriceCents)
+}
+
+func (b bundleData) SavingsPercent() int64 {
+	if b.RegularPriceCents == nil || *b.RegularPriceCents == 0 {
+		return 0
+	}
+	return int64(math.Round(float64((*b.RegularPriceCents-b.PriceCents)*100) / float64(*b.RegularPriceCents)))
+}
+
+type bundleMemberData struct {
+	ItemName       string
+	ComponentLabel string
+	ShareCents     int64
+}
+
+func (m bundleMemberData) Label() string {
+	if m.ComponentLabel != "" {
+		return m.ComponentLabel
+	}
+	return m.ItemName
+}
+
+func (m bundleMemberData) ShareText() string { return store.FormatMoney(m.ShareCents) }
+
+type bundleItemGroupData struct {
+	Category string
+	Items    []bundleItemData
+}
+
+type bundleItemData struct {
+	ID             int64
+	Name           string
+	Status         string
+	ChosenOption   string
+	Selected       bool
+	ComponentLabel string
 }
 
 func (i itemData) ActualText() string {
@@ -120,8 +205,30 @@ type detailData struct {
 // the two separately.
 type optionView struct {
 	store.Option
-	Comments []store.Comment
+	Comments      []store.Comment
+	Bundle        *bundleOptionData
+	ChooseConfirm string
 }
+
+type bundleOptionData struct {
+	BundleID       int64
+	BundleName     string
+	ComponentLabel string
+	ItemName       string
+	PriceCents     int64
+	BundlePrice    int64
+	ChooseConfirm  string
+	Comments       []store.BundleComment
+}
+
+func (b bundleOptionData) Label() string {
+	if b.ComponentLabel != "" {
+		return b.ComponentLabel
+	}
+	return b.ItemName
+}
+func (b bundleOptionData) ShareText() string { return store.FormatMoney(b.PriceCents) }
+func (b bundleOptionData) TotalText() string { return store.FormatMoney(b.BundlePrice) }
 
 // --- handlers ---
 
@@ -145,6 +252,92 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.store.Add(r.Context(), in); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderList(w, r)
+}
+
+func (s *Server) handleAddBundle(w http.ResponseWriter, r *http.Request) {
+	in, err := parseBundleInput(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if _, err := s.store.AddBundle(r.Context(), in); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderList(w, r)
+}
+
+func (s *Server) handleUpdateBundle(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	if _, err := s.store.GetBundle(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	in, err := parseBundleInput(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if _, err := s.store.UpdateBundle(r.Context(), id, in); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderList(w, r)
+}
+
+func (s *Server) handleDeleteBundle(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	if err := s.store.DeleteBundle(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderList(w, r)
+}
+
+func (s *Server) handleChooseBundle(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	if _, err := s.store.ChooseBundle(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderList(w, r)
+}
+
+func (s *Server) handleAddBundleComment(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.fail(w, r, errBadRequest)
+		return
+	}
+	if _, err := s.store.AddBundleComment(r.Context(), id, r.PostFormValue("body")); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderList(w, r)
+}
+
+func (s *Server) handleDeleteBundleComment(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "cid")
+	if !ok {
+		return
+	}
+	if err := s.store.DeleteBundleComment(r.Context(), id); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -348,9 +541,59 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 	if err != nil {
 		return listData{}, err
 	}
+	bundles, err := s.store.ListBundles(ctx)
+	if err != nil {
+		return listData{}, err
+	}
+	itemsByID := make(map[int64]store.Item, len(items))
+	chosenOptionNames := make(map[int64]string, len(items))
+	for _, item := range items {
+		itemsByID[item.ID] = item
+		options, err := s.store.ListOptions(ctx, item.ID)
+		if err != nil {
+			return listData{}, err
+		}
+		for _, option := range options {
+			if option.Chosen {
+				chosenOptionNames[item.ID] = option.Title()
+				break
+			}
+		}
+	}
+	groups := store.GroupByCategory(items)
+	bundleViews := make([]bundleData, 0, len(bundles))
+	for _, bundle := range bundles {
+		view := bundleData{Bundle: bundle, Members: make([]bundleMemberData, 0, len(bundle.Members))}
+		comments, err := s.store.ListBundleComments(ctx, bundle.ID)
+		if err != nil {
+			return listData{}, err
+		}
+		view.Comments = comments
+		membersByItem := make(map[int64]store.BundleMemberInput, len(bundle.Members))
+		affectedNames := make([]string, 0, len(bundle.Members))
+		for _, member := range bundle.Members {
+			option, err := s.store.GetOption(ctx, member.OptionID)
+			if err != nil {
+				return listData{}, err
+			}
+			item, ok := itemsByID[member.ItemID]
+			if !ok || option.PriceCents == nil {
+				return listData{}, fmt.Errorf("bundle %d has incomplete member %d", bundle.ID, member.ID)
+			}
+			view.Members = append(view.Members, bundleMemberData{
+				ItemName: item.Name, ComponentLabel: member.ComponentLabel, ShareCents: *option.PriceCents,
+			})
+			membersByItem[member.ItemID] = store.BundleMemberInput{ComponentLabel: member.ComponentLabel}
+			affectedNames = append(affectedNames, item.Name)
+			view.Chosen = view.Chosen || option.Chosen
+		}
+		view.AffectedItems = joinNames(affectedNames)
+		view.ChooseConfirm = bundleChooseConfirm(bundle, bundles, itemsByID, s.store, ctx)
+		view.EditItems = bundleItemsForGroups(groups, chosenOptionNames, membersByItem)
+		bundleViews = append(bundleViews, view)
+	}
 	done, total := store.Progress(items)
 	summaries := store.SummarizeBudgets(items, prices)
-	groups := store.GroupByCategory(items)
 	data := make([]groupData, 0, len(groups))
 	for _, group := range groups {
 		view := groupData{Category: group.Category, Summary: summaries.Categories[group.Category]}
@@ -360,7 +603,36 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 		}
 		data = append(data, view)
 	}
-	return listData{Groups: data, Overall: summaries.Overall, Done: done, Total: total}, nil
+	bundleItemGroups := bundleItemsForGroups(groups, chosenOptionNames, nil)
+	return listData{Groups: data, Bundles: bundleViews, BundleItems: bundleItemGroups, Overall: summaries.Overall, Done: done, Total: total}, nil
+}
+
+func bundleItemsForGroups(groups []store.CategoryGroup, chosen map[int64]string, members map[int64]store.BundleMemberInput) []bundleItemGroupData {
+	result := make([]bundleItemGroupData, 0, len(groups))
+	for _, group := range groups {
+		view := bundleItemGroupData{Category: group.Category, Items: make([]bundleItemData, 0, len(group.Items))}
+		for _, item := range group.Items {
+			member, selected := members[item.ID]
+			view.Items = append(view.Items, bundleItemData{
+				ID: item.ID, Name: item.Name, Status: item.Status, ChosenOption: chosen[item.ID], Selected: selected, ComponentLabel: member.ComponentLabel,
+			})
+		}
+		result = append(result, view)
+	}
+	return result
+}
+
+func joinNames(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	if len(names) == 1 {
+		return names[0]
+	}
+	if len(names) == 2 {
+		return names[0] + " and " + names[1]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + ", and " + names[len(names)-1]
 }
 
 func newItemData(item store.Item, chosenPrices map[int64]*int64) itemData {
@@ -388,9 +660,15 @@ func (s *Server) renderDetail(w http.ResponseWriter, r *http.Request, id int64, 
 		return
 	}
 
+	bundleOptions, normalConfirms, err := s.bundleOptionData(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	views := make([]optionView, 0, len(opts))
 	for _, o := range opts {
-		views = append(views, optionView{Option: o, Comments: comments[o.ID]})
+		bundle := bundleOptions[o.ID]
+		views = append(views, optionView{Option: o, Comments: comments[o.ID], Bundle: bundle, ChooseConfirm: normalConfirms[o.ItemID]})
 	}
 	s.render(w, r, http.StatusOK, "detail", detailData{
 		Item:       item,
@@ -398,6 +676,99 @@ func (s *Server) renderDetail(w http.ResponseWriter, r *http.Request, id int64, 
 		Categories: store.Categories,
 		Editing:    editing,
 	})
+}
+
+func (s *Server) bundleOptionData(ctx context.Context) (map[int64]*bundleOptionData, map[int64]string, error) {
+	bundles, err := s.store.ListBundles(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	items, err := s.store.List(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	itemsByID := make(map[int64]store.Item, len(items))
+	for _, item := range items {
+		itemsByID[item.ID] = item
+	}
+	result := make(map[int64]*bundleOptionData)
+	normalConfirms := make(map[int64]string)
+	for _, bundle := range bundles {
+		comments, err := s.store.ListBundleComments(ctx, bundle.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		confirm := bundleChooseConfirm(bundle, bundles, itemsByID, s.store, ctx)
+		chosen := false
+		for _, member := range bundle.Members {
+			option, err := s.store.GetOption(ctx, member.OptionID)
+			if err != nil {
+				return nil, nil, err
+			}
+			chosen = chosen || option.Chosen
+			item := itemsByID[member.ItemID]
+			if option.PriceCents == nil {
+				return nil, nil, fmt.Errorf("bundle %d has incomplete member", bundle.ID)
+			}
+			result[option.ID] = &bundleOptionData{BundleID: bundle.ID, BundleName: bundle.Name, ComponentLabel: member.ComponentLabel, ItemName: item.Name, PriceCents: *option.PriceCents, BundlePrice: bundle.PriceCents, ChooseConfirm: confirm, Comments: comments}
+		}
+		if chosen {
+			affected := make([]string, 0, len(bundle.Members))
+			for _, member := range bundle.Members {
+				affected = append(affected, itemsByID[member.ItemID].Name)
+			}
+			for _, member := range bundle.Members {
+				normalConfirms[member.ItemID] = "Choosing this Option will unchoose " + bundle.Name + " and mark " + joinNames(affected) + " needed. Continue?"
+			}
+		}
+	}
+	return result, normalConfirms, nil
+}
+
+func bundleChooseConfirm(target store.Bundle, bundles []store.Bundle, items map[int64]store.Item, st *store.Store, ctx context.Context) string {
+	targetItems := make(map[int64]bool, len(target.Members))
+	targetOptions := make(map[int64]bool, len(target.Members))
+	affected := make([]string, 0, len(target.Members))
+	for _, member := range target.Members {
+		targetItems[member.ItemID] = true
+		targetOptions[member.OptionID] = true
+		affected = append(affected, items[member.ItemID].Name)
+	}
+	var replaced, conflicts []string
+	for itemID := range targetItems {
+		options, err := st.ListOptions(ctx, itemID)
+		if err != nil {
+			continue
+		}
+		for _, option := range options {
+			if option.Chosen && !targetOptions[option.ID] {
+				replaced = append(replaced, option.Title())
+			}
+		}
+	}
+	for _, bundle := range bundles {
+		chosen := false
+		sharesTarget := false
+		for _, member := range bundle.Members {
+			option, err := st.GetOption(ctx, member.OptionID)
+			if err != nil {
+				continue
+			}
+			chosen = chosen || option.Chosen
+			sharesTarget = sharesTarget || targetItems[member.ItemID]
+		}
+		if bundle.ID != target.ID && chosen && sharesTarget {
+			conflicts = append(conflicts, bundle.Name)
+		}
+	}
+	parts := []string{"Choose " + target.Name + " for " + joinNames(affected) + "."}
+	if len(replaced) > 0 {
+		parts = append(parts, "This replaces "+joinNames(replaced)+".")
+	}
+	if len(conflicts) > 0 {
+		parts = append(parts, "This unchooses "+joinNames(conflicts)+".")
+	}
+	return strings.Join(parts, " ") + " Continue?"
 }
 
 func (s *Server) renderList(w http.ResponseWriter, r *http.Request) {
@@ -438,6 +809,30 @@ func parseItemInput(r *http.Request) (store.ItemInput, error) {
 	}, nil
 }
 
+func parseBundleInput(r *http.Request) (store.BundleInput, error) {
+	if err := r.ParseForm(); err != nil {
+		return store.BundleInput{}, fmt.Errorf("%w: malformed form", errBadRequest)
+	}
+	members := make([]store.BundleMemberInput, 0, len(r.PostForm["item_id"]))
+	for _, rawID := range r.PostForm["item_id"] {
+		id, err := strconv.ParseInt(rawID, 10, 64)
+		if err != nil {
+			return store.BundleInput{}, store.ErrInvalidBundleMembership
+		}
+		members = append(members, store.BundleMemberInput{
+			ItemID:         id,
+			ComponentLabel: r.PostFormValue("component_label_" + rawID),
+		})
+	}
+	return store.BundleInput{
+		Name:         r.PostFormValue("name"),
+		URL:          r.PostFormValue("url"),
+		Price:        r.PostFormValue("price"),
+		RegularPrice: r.PostFormValue("regular_price"),
+		Members:      members,
+	}, nil
+}
+
 // pathID reads a numeric path segment, writing a 404 if it is not a number.
 func (s *Server) pathID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue(name), 10, 64)
@@ -468,6 +863,14 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "That does not look like a link.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidPrice):
 		http.Error(w, "Price should be a number.", http.StatusBadRequest)
+	case errors.Is(err, store.ErrInvalidBundleName):
+		http.Error(w, "Give the bundle a name.", http.StatusBadRequest)
+	case errors.Is(err, store.ErrInvalidBundlePrice):
+		http.Error(w, "Bundle price must be greater than zero with at most two decimal places.", http.StatusBadRequest)
+	case errors.Is(err, store.ErrInvalidRegularPrice):
+		http.Error(w, "Regular price must be at least the bundle price.", http.StatusBadRequest)
+	case errors.Is(err, store.ErrInvalidBundleMembership):
+		http.Error(w, "Choose at least two different items.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidComment):
 		http.Error(w, "Write something first.", http.StatusBadRequest)
 	case errors.Is(err, errBadRequest):

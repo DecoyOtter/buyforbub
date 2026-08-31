@@ -72,6 +72,80 @@ func TestSummarizeBudgetsIgnoresPriorBudgetAfterPurchase(t *testing.T) {
 	}
 }
 
+func TestChosenBundleAllocationsFeedBudgetSummaries(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	first := mustAdd(t, s, ItemInput{Name: "Cot", Category: "Nursery", Budget: "$40"})
+	second := mustAdd(t, s, ItemInput{Name: "Pram", Category: "Travel", Budget: "$40"})
+	third := mustAdd(t, s, ItemInput{Name: "Car seat", Category: "Travel", Budget: "$40"})
+	bundle, err := s.AddBundle(ctx, BundleInput{
+		Name: "Travel system", URL: "https://shop.example/system", Price: "100",
+		Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: second.ID}, {ItemID: third.ID}},
+	})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+	if _, err := s.ChooseBundle(ctx, bundle.ID); err != nil {
+		t.Fatalf("ChooseBundle: %v", err)
+	}
+
+	items, err := s.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	prices, err := s.ChosenOptionPrices(ctx)
+	if err != nil {
+		t.Fatalf("ChosenOptionPrices: %v", err)
+	}
+	summaries := SummarizeBudgets(items, prices)
+	assertBudgetSummary(t, "Nursery", summaries.Categories["Nursery"], BudgetSummary{ActualCents: 3334, ExpectedTotalCents: 3334})
+	assertBudgetSummary(t, "Travel", summaries.Categories["Travel"], BudgetSummary{ActualCents: 6666, ExpectedTotalCents: 6666})
+	assertBudgetSummary(t, "overall", summaries.Overall, BudgetSummary{ActualCents: 10000, ExpectedTotalCents: 10000})
+
+	if _, err := s.Toggle(ctx, first.ID); err != nil {
+		t.Fatalf("Toggle: %v", err)
+	}
+	assertBundleBudgetSummary(t, s, BudgetSummary{StillPlannedCents: 12000, ExpectedTotalCents: 12000})
+	if _, err := s.ChooseBundle(ctx, bundle.ID); err != nil {
+		t.Fatalf("ChooseBundle again: %v", err)
+	}
+	if _, err := s.UpdateBundle(ctx, bundle.ID, BundleInput{
+		Name: "Travel system", URL: "https://shop.example/system", Price: "100",
+		Members: []BundleMemberInput{{ItemID: first.ID}, {ItemID: second.ID}, {ItemID: third.ID}},
+	}); err != nil {
+		t.Fatalf("UpdateBundle: %v", err)
+	}
+	assertBundleBudgetSummary(t, s, BudgetSummary{StillPlannedCents: 12000, ExpectedTotalCents: 12000})
+	if _, err := s.ChooseBundle(ctx, bundle.ID); err != nil {
+		t.Fatalf("ChooseBundle after update: %v", err)
+	}
+	normal := mustAddOption(t, s, second.ID, OptionInput{URL: "https://shop.example/pram", Price: "10"})
+	if _, err := s.ChooseOption(ctx, normal.ID); err != nil {
+		t.Fatalf("ChooseOption: %v", err)
+	}
+	assertBundleBudgetSummary(t, s, BudgetSummary{ActualCents: 1000, StillPlannedCents: 8000, ExpectedTotalCents: 9000})
+	if _, err := s.ChooseBundle(ctx, bundle.ID); err != nil {
+		t.Fatalf("ChooseBundle after displacement: %v", err)
+	}
+	if err := s.DeleteBundle(ctx, bundle.ID); err != nil {
+		t.Fatalf("DeleteBundle: %v", err)
+	}
+	assertBundleBudgetSummary(t, s, BudgetSummary{StillPlannedCents: 12000, ExpectedTotalCents: 12000})
+}
+
+func assertBundleBudgetSummary(t *testing.T, s *Store, want BudgetSummary) {
+	t.Helper()
+	items, err := s.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	prices, err := s.ChosenOptionPrices(context.Background())
+	if err != nil {
+		t.Fatalf("ChosenOptionPrices: %v", err)
+	}
+	assertBudgetSummary(t, "bundle overall", SummarizeBudgets(items, prices).Overall, want)
+}
+
 func addBoughtWithOption(t *testing.T, s *Store, input ItemInput, price string) {
 	t.Helper()
 	item := mustAdd(t, s, input)

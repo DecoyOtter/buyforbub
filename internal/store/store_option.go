@@ -113,6 +113,18 @@ func (s *Store) ChooseOption(ctx context.Context, id int64) (Option, error) {
 	if err != nil {
 		return Option{}, err
 	}
+	var bundleID int64
+	err = s.db.QueryRowContext(ctx, `SELECT bundle_id FROM bundle_members WHERE option_id = ?`, id).Scan(&bundleID)
+	if err == nil {
+		if _, err := s.ChooseBundle(ctx, bundleID); err != nil {
+			return Option{}, err
+		}
+		o.Chosen = true
+		return o, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return Option{}, fmt.Errorf("choose option: %w", err)
+	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -120,6 +132,15 @@ func (s *Store) ChooseOption(ctx context.Context, id int64) (Option, error) {
 	}
 	defer tx.Rollback()
 
+	bundleIDs, err := chosenBundleIDsForItemTx(ctx, tx, o.ItemID)
+	if err != nil {
+		return Option{}, err
+	}
+	for _, bundleID := range bundleIDs {
+		if err := unchooseBundleTx(ctx, tx, bundleID); err != nil {
+			return Option{}, err
+		}
+	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE options SET chosen = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE item_id = ?`,
 		id, o.ItemID); err != nil {

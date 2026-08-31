@@ -131,3 +131,62 @@ func TestCommentBodyIsEscaped(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 	assertNotContains(t, rec.Body.String(), "<script>alert(1)</script>")
 }
+
+func TestBundleCommentsRenderAndRefreshEveryCopy(t *testing.T) {
+	s, st := newServer(t)
+	cot := mustAdd(t, st, "Cot", "Nursery")
+	pram := mustAdd(t, st, "Pram", "Travel")
+	bundle, err := st.AddBundle(context.Background(), store.BundleInput{
+		Name: "Sleep bundle", URL: "https://shop.example/sleep", Price: "100",
+		Members: []store.BundleMemberInput{{ItemID: cot.ID}, {ItemID: pram.ID}},
+	})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+
+	rec := do(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID)+"/comments", url.Values{"body": {" includes adapter "}})
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, "Bundle Comments")
+	assertContains(t, body, "includes adapter")
+	assertContains(t, body, `hx-post="/bundle-comments/`)
+
+	rec = do(t, s, http.MethodPost, "/options/"+itoa(bundle.Members[0].OptionID)+"/comments", url.Values{"body": {"item-specific"}})
+	assertStatus(t, rec, http.StatusOK)
+	body = rec.Body.String()
+	assertContains(t, body, "Bundle Comments")
+	assertContains(t, body, `aria-label="Comments"`)
+	assertContains(t, body, "includes adapter")
+	assertContains(t, body, "item-specific")
+	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`/comments" hx-target="#list"`)
+
+	comment, err := st.ListBundleComments(context.Background(), bundle.ID)
+	if err != nil || len(comment) != 1 {
+		t.Fatalf("ListBundleComments = %#v, %v", comment, err)
+	}
+	rec = do(t, s, http.MethodPost, "/bundle-comments/"+itoa(comment[0].ID)+"/delete", nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertNotContains(t, rec.Body.String(), "includes adapter")
+}
+
+func TestBundleCommentFailuresAndEscaping(t *testing.T) {
+	s, st := newServer(t)
+	first := mustAdd(t, st, "Cot", "Nursery")
+	second := mustAdd(t, st, "Pram", "Travel")
+	bundle, err := st.AddBundle(context.Background(), store.BundleInput{Name: "Sleep bundle", URL: "https://shop.example/sleep", Price: "100", Members: []store.BundleMemberInput{{ItemID: first.ID}, {ItemID: second.ID}}})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+	for _, body := range []string{"", "   "} {
+		rec := do(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID)+"/comments", url.Values{"body": {body}})
+		assertStatus(t, rec, http.StatusBadRequest)
+		assertContains(t, rec.Body.String(), "Write something first")
+	}
+	rec := do(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID)+"/comments", url.Values{"body": {"<script>alert(1)</script>"}})
+	assertStatus(t, rec, http.StatusOK)
+	assertNotContains(t, rec.Body.String(), "<script>alert(1)</script>")
+	for _, path := range []string{"/bundles/nope/comments", "/bundles/999/comments", "/bundle-comments/nope/delete", "/bundle-comments/999/delete"} {
+		rec := do(t, s, http.MethodPost, path, url.Values{"body": {"hi"}})
+		assertStatus(t, rec, http.StatusNotFound)
+	}
+}

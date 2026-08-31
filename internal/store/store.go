@@ -153,6 +153,17 @@ func (s *Store) SetStatus(ctx context.Context, id int64, status string) (Item, e
 	}
 	defer tx.Rollback()
 
+	if status == StatusNeeded {
+		bundleIDs, err := chosenBundleIDsForItemTx(ctx, tx, id)
+		if err != nil {
+			return Item{}, err
+		}
+		for _, bundleID := range bundleIDs {
+			if err := unchooseBundleTx(ctx, tx, bundleID); err != nil {
+				return Item{}, err
+			}
+		}
+	}
 	res, err := tx.ExecContext(ctx, `UPDATE items SET status = ? WHERE id = ?`, status, id)
 	if err != nil {
 		return Item{}, fmt.Errorf("set status: %w", err)
@@ -187,11 +198,64 @@ func (s *Store) Toggle(ctx context.Context, id int64) (Item, error) {
 }
 
 func (s *Store) Delete(ctx context.Context, id int64) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM items WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("delete item: %w", err)
 	}
-	return mustAffectOne(res, "delete item")
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, `SELECT bundle_id FROM bundle_members WHERE item_id = ? ORDER BY bundle_id`, id)
+	if err != nil {
+		return fmt.Errorf("delete item: %w", err)
+	}
+	var bundleIDs []int64
+	for rows.Next() {
+		var bundleID int64
+		if err := rows.Scan(&bundleID); err != nil {
+			rows.Close()
+			return fmt.Errorf("delete item: %w", err)
+		}
+		bundleIDs = append(bundleIDs, bundleID)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("delete item: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("delete item: %w", err)
+	}
+
+	for _, bundleID := range bundleIDs {
+		if err := unchooseBundleTx(ctx, tx, bundleID); err != nil {
+			return err
+		}
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM items WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete item: %w", err)
+	}
+	if err := mustAffectOne(res, "delete item"); err != nil {
+		return err
+	}
+	for _, bundleID := range bundleIDs {
+		members, err := listBundleMembersTx(ctx, tx, bundleID)
+		if err != nil {
+			return err
+		}
+		if len(members) < 2 {
+			if err := deleteBundleTx(ctx, tx, bundleID); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := reallocateBundleTx(ctx, tx, bundleID); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("delete item: %w", err)
+	}
+	return nil
 }
 
 // SeedIfEmpty inserts the default checklist, but only into an empty database.
