@@ -13,6 +13,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/DecoyOtter/buyforbub/internal/store"
 )
@@ -62,6 +63,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
 	s.mux.HandleFunc("POST /items", s.handleAdd)
 	s.mux.HandleFunc("POST /bundles", s.handleAddBundle)
+	s.mux.HandleFunc("POST /bundles/{bid}", s.handleUpdateBundle)
+	s.mux.HandleFunc("POST /bundles/{bid}/delete", s.handleDeleteBundle)
 	s.mux.HandleFunc("GET /items/{id}", s.handleDetail)
 	s.mux.HandleFunc("POST /items/{id}", s.handleUpdate)
 	s.mux.HandleFunc("GET /items/{id}/row", s.handleRow)
@@ -107,17 +110,32 @@ type itemData struct {
 
 type bundleData struct {
 	store.Bundle
-	Members []bundleMemberData
-	Chosen  bool
+	Members       []bundleMemberData
+	EditItems     []bundleItemGroupData
+	Chosen        bool
+	AffectedItems string
 }
 
 func (b bundleData) PriceText() string { return store.FormatMoney(b.PriceCents) }
+
+func (b bundleData) PriceInput() string { return centsInput(b.PriceCents) }
 
 func (b bundleData) RegularPriceText() string {
 	if b.RegularPriceCents == nil {
 		return ""
 	}
 	return store.FormatMoney(*b.RegularPriceCents)
+}
+
+func (b bundleData) RegularPriceInput() string {
+	if b.RegularPriceCents == nil {
+		return ""
+	}
+	return centsInput(*b.RegularPriceCents)
+}
+
+func centsInput(cents int64) string {
+	return fmt.Sprintf("%d.%02d", cents/100, cents%100)
 }
 
 func (b bundleData) SavingsText() string {
@@ -155,10 +173,12 @@ type bundleItemGroupData struct {
 }
 
 type bundleItemData struct {
-	ID           int64
-	Name         string
-	Status       string
-	ChosenOption string
+	ID             int64
+	Name           string
+	Status         string
+	ChosenOption   string
+	Selected       bool
+	ComponentLabel string
 }
 
 func (i itemData) ActualText() string {
@@ -218,6 +238,39 @@ func (s *Server) handleAddBundle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.store.AddBundle(r.Context(), in); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderList(w, r)
+}
+
+func (s *Server) handleUpdateBundle(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	if _, err := s.store.GetBundle(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	in, err := parseBundleInput(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if _, err := s.store.UpdateBundle(r.Context(), id, in); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderList(w, r)
+}
+
+func (s *Server) handleDeleteBundle(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	if err := s.store.DeleteBundle(r.Context(), id); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -440,9 +493,12 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 			}
 		}
 	}
+	groups := store.GroupByCategory(items)
 	bundleViews := make([]bundleData, 0, len(bundles))
 	for _, bundle := range bundles {
 		view := bundleData{Bundle: bundle, Members: make([]bundleMemberData, 0, len(bundle.Members))}
+		membersByItem := make(map[int64]store.BundleMemberInput, len(bundle.Members))
+		affectedNames := make([]string, 0, len(bundle.Members))
 		for _, member := range bundle.Members {
 			option, err := s.store.GetOption(ctx, member.OptionID)
 			if err != nil {
@@ -455,13 +511,16 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 			view.Members = append(view.Members, bundleMemberData{
 				ItemName: item.Name, ComponentLabel: member.ComponentLabel, ShareCents: *option.PriceCents,
 			})
+			membersByItem[member.ItemID] = store.BundleMemberInput{ComponentLabel: member.ComponentLabel}
+			affectedNames = append(affectedNames, item.Name)
 			view.Chosen = view.Chosen || option.Chosen
 		}
+		view.AffectedItems = joinNames(affectedNames)
+		view.EditItems = bundleItemsForGroups(groups, chosenOptionNames, membersByItem)
 		bundleViews = append(bundleViews, view)
 	}
 	done, total := store.Progress(items)
 	summaries := store.SummarizeBudgets(items, prices)
-	groups := store.GroupByCategory(items)
 	data := make([]groupData, 0, len(groups))
 	for _, group := range groups {
 		view := groupData{Category: group.Category, Summary: summaries.Categories[group.Category]}
@@ -471,17 +530,33 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 		}
 		data = append(data, view)
 	}
-	bundleItemGroups := make([]bundleItemGroupData, 0, len(groups))
+	bundleItemGroups := bundleItemsForGroups(groups, chosenOptionNames, nil)
+	return listData{Groups: data, Bundles: bundleViews, BundleItems: bundleItemGroups, Overall: summaries.Overall, Done: done, Total: total}, nil
+}
+
+func bundleItemsForGroups(groups []store.CategoryGroup, chosen map[int64]string, members map[int64]store.BundleMemberInput) []bundleItemGroupData {
+	result := make([]bundleItemGroupData, 0, len(groups))
 	for _, group := range groups {
 		view := bundleItemGroupData{Category: group.Category, Items: make([]bundleItemData, 0, len(group.Items))}
 		for _, item := range group.Items {
+			member, selected := members[item.ID]
 			view.Items = append(view.Items, bundleItemData{
-				ID: item.ID, Name: item.Name, Status: item.Status, ChosenOption: chosenOptionNames[item.ID],
+				ID: item.ID, Name: item.Name, Status: item.Status, ChosenOption: chosen[item.ID], Selected: selected, ComponentLabel: member.ComponentLabel,
 			})
 		}
-		bundleItemGroups = append(bundleItemGroups, view)
+		result = append(result, view)
 	}
-	return listData{Groups: data, Bundles: bundleViews, BundleItems: bundleItemGroups, Overall: summaries.Overall, Done: done, Total: total}, nil
+	return result
+}
+
+func joinNames(names []string) string {
+	if len(names) < 2 {
+		return ""
+	}
+	if len(names) == 2 {
+		return names[0] + " and " + names[1]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + ", and " + names[len(names)-1]
 }
 
 func newItemData(item store.Item, chosenPrices map[int64]*int64) itemData {

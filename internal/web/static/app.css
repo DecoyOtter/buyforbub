@@ -141,6 +141,10 @@ body {
 .bundle-card__members { margin: 0; padding: 0; list-style: none; }
 .bundle-card__members li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; color: var(--muted); font-size: .8rem; }
 .bundle-card__members strong { flex: none; color: var(--text); font-variant-numeric: tabular-nums; }
+.bundle-edit { margin-top: 10px; }
+.bundle-edit summary { display: inline-flex; list-style: none; }
+.bundle-edit summary::-webkit-details-marker { display: none; }
+.bundle-delete { margin-top: 10px; }
 
 /* --- add form --- */
 
