@@ -69,6 +69,27 @@ func TestBudgetCountsOmittedWhenZero(t *testing.T) {
 	assertNotContains(t, rec.Body.String(), "budget-total__counts")
 }
 
+func TestChosenBundleAllocationsRenderInCategoryAndOverallActuals(t *testing.T) {
+	s, st := newServer(t)
+	cot := mustAddBudgetItem(t, st, store.ItemInput{Name: "Cot", Category: "Nursery", Budget: "$40"})
+	pram := mustAddBudgetItem(t, st, store.ItemInput{Name: "Pram", Category: "Travel", Budget: "$40"})
+	seat := mustAddBudgetItem(t, st, store.ItemInput{Name: "Car seat", Category: "Travel", Budget: "$40"})
+	bundle, err := st.AddBundle(context.Background(), store.BundleInput{
+		Name: "Travel system", URL: "https://shop.example/system", Price: "100",
+		Members: []store.BundleMemberInput{{ItemID: cot.ID}, {ItemID: pram.ID}, {ItemID: seat.ID}},
+	})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+
+	rec := do(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID)+"/choose", nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `<span>Actual</span><strong>$100</strong>`)
+	assertContains(t, body, `<strong>$33.34 actual</strong><span>$0 planned</span>`)
+	assertContains(t, body, `<strong>$66.66 actual</strong><span>$0 planned</span>`)
+}
+
 func TestBudgetSummariesRefreshAfterMutations(t *testing.T) {
 	s, st := newServer(t)
 	item := mustAddBudgetItem(t, st, store.ItemInput{Name: "Cot", Category: "Nursery", Budget: "$100"})
