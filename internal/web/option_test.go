@@ -190,7 +190,11 @@ func TestBundleOptionsRenderAndChooseAsBundle(t *testing.T) {
 	assertContains(t, body, `href="https://shop.example/sleep"`)
 	assertContains(t, body, "Sleep bundle · $50 share of $100")
 	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`/choose"`)
-	assertNotContains(t, body, `aria-label="Remove Cot frame"`)
+	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`/delete"`)
+	assertContains(t, body, `aria-label="Remove Sleep bundle"`)
+	assertContains(t, body, "This removes the Bundle Options and their comments.")
+	assertContains(t, body, `aria-label="Comments"`)
+	assertNotContains(t, body, "Option Comments")
 	assertContains(t, body, "This replaces Normal cot.")
 
 	rec = do(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID)+"/choose", nil)

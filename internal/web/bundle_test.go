@@ -133,7 +133,7 @@ func TestUpdateBundle(t *testing.T) {
 	assertContains(t, body, `value="150.00"`)
 	assertContains(t, body, `value="Frame"`)
 	assertContains(t, body, "Saving will unchoose this Bundle and mark Cot and Pram needed.")
-	assertContains(t, body, "Removing a member deletes its Bundle Option and Option Comments.")
+	assertContains(t, body, "Removing a member deletes its Bundle Option and comments.")
 
 	rec = do(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID), url.Values{
 		"name": {"Travel bundle"}, "url": {"https://shop.example/travel"}, "price": {"120"},

@@ -155,7 +155,7 @@ func TestBundleCommentsRenderAndRefreshEveryCopy(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 	body = rec.Body.String()
 	assertContains(t, body, "Bundle Comments")
-	assertContains(t, body, "Option Comments")
+	assertContains(t, body, `aria-label="Comments"`)
 	assertContains(t, body, "includes adapter")
 	assertContains(t, body, "item-specific")
 	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`/comments" hx-target="#list"`)

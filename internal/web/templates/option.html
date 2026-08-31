@@ -1,5 +1,5 @@
 {{define "option"}}<li class="option{{if .Chosen}} is-chosen{{end}}">
-  {{if .Bundle}}<span class="option__bundle-badge">Bundle</span><a class="option__link" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Bundle.Label}}</a><a class="option__bundle-url" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.URL}}</a><span class="option__bundle-meta">{{.Bundle.BundleName}} · {{.Bundle.ShareText}} share of {{.Bundle.TotalText}}</span>{{else}}<a class="option__link" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Title}}</a>{{end}}
+  <a class="option__link" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{if .Bundle}}{{.Bundle.Label}}{{else}}{{.Title}}{{end}}</a>
   {{if .PriceText}}<span class="option__price">{{.PriceText}}</span>{{end}}
   {{if .Chosen}}
   <span class="option__badge">Bought this</span>
@@ -8,9 +8,14 @@
           hx-post="{{if .Bundle}}/bundles/{{.Bundle.BundleID}}/choose{{else}}/options/{{.ID}}/choose{{end}}" hx-target="#list" hx-swap="outerHTML"{{if .Bundle}} hx-confirm="{{.Bundle.ChooseConfirm}}"{{else if .ChooseConfirm}} hx-confirm="{{.ChooseConfirm}}"{{end}}
           aria-label="Mark {{.Title}} as the one bought">Choose</button>
   {{end}}
-  {{if not .Bundle}}<button class="option__remove" type="button"
+  {{if .Bundle}}<button class="option__remove" type="button"
+          hx-post="/bundles/{{.Bundle.BundleID}}/delete" hx-target="#list" hx-swap="outerHTML"
+          hx-confirm="Delete {{.Bundle.BundleName}}? This removes the Bundle Options and their comments."
+          aria-label="Remove {{.Bundle.BundleName}}">&times;</button>{{else}}<button class="option__remove" type="button"
           hx-post="/options/{{.ID}}/delete" hx-target="{{if .Chosen}}#list{{else}}#item-{{.ItemID}}{{end}}" hx-swap="outerHTML"
           aria-label="Remove {{.Title}}">&times;</button>{{end}}
+
+  {{if .Bundle}}<div class="option__bundle-meta-row"><span class="option__bundle-badge">Bundle</span><span class="option__bundle-meta">{{.Bundle.BundleName}} · {{.Bundle.ShareText}} share of {{.Bundle.TotalText}}</span></div>{{end}}
 
   {{if .Bundle}}<div class="comments comments--bundle" aria-label="Bundle Comments">
     <h3 class="comments__title">Bundle Comments</h3>
@@ -29,8 +34,8 @@
              autocomplete="off" aria-label="Comment on {{.Bundle.BundleName}}">
     </form>
   </div>{{end}}
-  <div class="comments{{if .Bundle}} comments--option{{end}}"{{if .Bundle}} aria-label="Option Comments"{{end}}>
-    {{if .Bundle}}<h3 class="comments__title">Option Comments</h3>{{end}}
+  <div class="comments{{if .Bundle}} comments--option{{end}}"{{if .Bundle}} aria-label="Comments"{{end}}>
+    {{if .Bundle}}<h3 class="comments__title">Comments</h3>{{end}}
     {{range .Comments}}
     <div class="comment">
       <span class="comment__body">{{.Body}}</span>

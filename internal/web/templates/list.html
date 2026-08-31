@@ -55,7 +55,7 @@
               <label class="bundle-create__field"><span>URL</span><input type="url" name="url" value="{{.URL}}" required inputmode="url" autocomplete="off"></label>
               <label class="bundle-create__field"><span>Bundle price</span><input type="text" name="price" value="{{.PriceInput}}" required inputmode="decimal" autocomplete="off"></label>
               <label class="bundle-create__field"><span>Regular price <em>(optional)</em></span><input type="text" name="regular_price" value="{{.RegularPriceInput}}" inputmode="decimal" autocomplete="off"></label>
-              <p class="bundle-create__hint">Removing a member deletes its Bundle Option and Option Comments.</p>
+              <p class="bundle-create__hint">Removing a member deletes its Bundle Option and comments.</p>
               <div class="bundle-create__items">
                 {{range .EditItems}}<fieldset><legend>{{.Category}}</legend>
                   {{range .Items}}<div class="bundle-create__item">
@@ -67,7 +67,7 @@
               <button class="btn btn--primary" type="submit">Save Bundle</button>
             </form>
           </details>
-          <form class="bundle-delete" hx-post="/bundles/{{.ID}}/delete" hx-target="#list" hx-swap="outerHTML" hx-confirm="Delete {{.Name}}? This removes Bundle Options and their Option Comments for {{.AffectedItems}}.">
+          <form class="bundle-delete" hx-post="/bundles/{{.ID}}/delete" hx-target="#list" hx-swap="outerHTML" hx-confirm="Delete {{.Name}}? This removes Bundle Options and comments for {{.AffectedItems}}.">
             <button class="btn btn--danger" type="submit">Delete Bundle</button>
           </form>
         </div>
