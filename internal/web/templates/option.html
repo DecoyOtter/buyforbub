@@ -1,16 +1,16 @@
 {{define "option"}}<li class="option{{if .Chosen}} is-chosen{{end}}">
-  <a class="option__link" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Title}}</a>
+  {{if .Bundle}}<span class="option__bundle-badge">Bundle</span><a class="option__link" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Bundle.Label}}</a><a class="option__bundle-url" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.URL}}</a><span class="option__bundle-meta">{{.Bundle.BundleName}} · {{.Bundle.ShareText}} share of {{.Bundle.TotalText}}</span>{{else}}<a class="option__link" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Title}}</a>{{end}}
   {{if .PriceText}}<span class="option__price">{{.PriceText}}</span>{{end}}
   {{if .Chosen}}
   <span class="option__badge">Bought this</span>
   {{else}}
   <button class="option__choose" type="button"
-          hx-post="/options/{{.ID}}/choose" hx-target="#list" hx-swap="outerHTML"
+          hx-post="{{if .Bundle}}/bundles/{{.Bundle.BundleID}}/choose{{else}}/options/{{.ID}}/choose{{end}}" hx-target="#list" hx-swap="outerHTML"{{if .Bundle}} hx-confirm="{{.Bundle.ChooseConfirm}}"{{else if .ChooseConfirm}} hx-confirm="{{.ChooseConfirm}}"{{end}}
           aria-label="Mark {{.Title}} as the one bought">Choose</button>
   {{end}}
-  <button class="option__remove" type="button"
+  {{if not .Bundle}}<button class="option__remove" type="button"
           hx-post="/options/{{.ID}}/delete" hx-target="{{if .Chosen}}#list{{else}}#item-{{.ItemID}}{{end}}" hx-swap="outerHTML"
-          aria-label="Remove {{.Title}}">&times;</button>
+          aria-label="Remove {{.Title}}">&times;</button>{{end}}
 
   <div class="comments">
     {{range .Comments}}

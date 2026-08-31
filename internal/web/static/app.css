@@ -146,6 +146,10 @@ body {
 .bundle-edit summary::-webkit-details-marker { display: none; }
 .bundle-delete { margin-top: 10px; }
 
+.option__bundle-badge { display: inline-block; margin-right: 6px; padding: 1px 5px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); font-size: .68rem; font-weight: 700; text-transform: uppercase; }
+.option__bundle-url { display: block; margin-top: 2px; color: var(--muted); font-size: .76rem; overflow-wrap: anywhere; }
+.option__bundle-meta { display: block; margin-top: 2px; color: var(--muted); font-size: .76rem; }
+
 /* --- add form --- */
 
 .add {

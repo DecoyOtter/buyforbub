@@ -166,6 +166,64 @@ func TestDeleteOption(t *testing.T) {
 	assertNotContains(t, body, "drop.example.com")
 }
 
+func TestBundleOptionsRenderAndChooseAsBundle(t *testing.T) {
+	s, st := newServer(t)
+	cot := mustAdd(t, st, "Cot", "Nursery")
+	pram := mustAdd(t, st, "Pram", "Travel")
+	normal := mustAddOption(t, st, cot.ID, store.OptionInput{URL: "https://shop.example/normal", Label: "Normal cot"})
+	if _, err := st.ChooseOption(context.Background(), normal.ID); err != nil {
+		t.Fatalf("ChooseOption: %v", err)
+	}
+	bundle, err := st.AddBundle(context.Background(), store.BundleInput{
+		Name: "Sleep bundle", URL: "https://shop.example/sleep", Price: "100",
+		Members: []store.BundleMemberInput{{ItemID: cot.ID, ComponentLabel: "Cot frame"}, {ItemID: pram.ID}},
+	})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+
+	rec := do(t, s, http.MethodGet, "/items/"+itoa(cot.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, "Bundle")
+	assertContains(t, body, "Cot frame")
+	assertContains(t, body, `href="https://shop.example/sleep"`)
+	assertContains(t, body, "Sleep bundle · $50 share of $100")
+	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`/choose"`)
+	assertNotContains(t, body, `aria-label="Remove Cot frame"`)
+	assertContains(t, body, "This replaces Normal cot.")
+
+	rec = do(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID)+"/choose", nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), "2 of 2 done")
+
+	rec = do(t, s, http.MethodGet, "/items/"+itoa(pram.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), "Bought this")
+}
+
+func TestNormalChoiceNamesBrokenBundle(t *testing.T) {
+	s, st := newServer(t)
+	cot := mustAdd(t, st, "Cot", "Nursery")
+	pram := mustAdd(t, st, "Pram", "Travel")
+	normal := mustAddOption(t, st, cot.ID, store.OptionInput{URL: "https://shop.example/normal", Label: "Normal cot"})
+	bundle, err := st.AddBundle(context.Background(), store.BundleInput{
+		Name: "Sleep bundle", URL: "https://shop.example/sleep", Price: "100",
+		Members: []store.BundleMemberInput{{ItemID: cot.ID}, {ItemID: pram.ID}},
+	})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+	if _, err := st.ChooseBundle(context.Background(), bundle.ID); err != nil {
+		t.Fatalf("ChooseBundle: %v", err)
+	}
+
+	rec := do(t, s, http.MethodGet, "/items/"+itoa(cot.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), "Choosing this Option will unchoose Sleep bundle and mark Cot and Pram needed.")
+	assertContains(t, rec.Body.String(), `hx-post="/options/`+itoa(normal.ID)+`/choose"`)
+}
+
 // html/template must neutralise a dangerous href even if one reaches the DB.
 func TestOptionURLIsEscaped(t *testing.T) {
 	s, st := newServer(t)

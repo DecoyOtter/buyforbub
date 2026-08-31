@@ -33,6 +33,7 @@
           <ul class="bundle-card__members">
             {{range .Members}}<li><span>{{.Label}}</span><strong>{{.ShareText}}</strong></li>{{end}}
           </ul>
+          {{if .Chosen}}<span class="option__badge">Bought this</span>{{else}}<button class="option__choose" type="button" hx-post="/bundles/{{.ID}}/choose" hx-target="#list" hx-swap="outerHTML" hx-confirm="{{.ChooseConfirm}}">Choose Bundle</button>{{end}}
           <details class="bundle-edit">
             <summary class="btn btn--quiet">Edit Bundle</summary>
             <form class="bundle-create__form" hx-post="/bundles/{{.ID}}" hx-target="#list" hx-swap="outerHTML"{{if .Chosen}} hx-confirm="Saving will unchoose this Bundle and mark {{.AffectedItems}} needed. Continue?"{{end}}>
