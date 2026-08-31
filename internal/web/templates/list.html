@@ -21,7 +21,7 @@
       </form>
     </details>
     <div class="bundle-rail__cards">
-      {{range .Bundles}}<details class="bundle-card{{if .Chosen}} is-chosen{{end}}">
+      {{range .Bundles}}{{$bundle := .}}<details class="bundle-card{{if .Chosen}} is-chosen{{end}}">
         <summary class="bundle-card__summary">
           <span class="bundle-card__name">{{.Name}}</span>
           <span class="bundle-card__price">{{.PriceText}}</span>
@@ -33,6 +33,20 @@
           <ul class="bundle-card__members">
             {{range .Members}}<li><span>{{.Label}}</span><strong>{{.ShareText}}</strong></li>{{end}}
           </ul>
+          <section class="comments comments--bundle" aria-label="Bundle Comments">
+            <h3 class="comments__title">Bundle Comments</h3>
+            {{range .Comments}}<div class="comment">
+              <span class="comment__body">{{.Body}}</span>
+              <span class="comment__age">{{.Age}}</span>
+              <button class="comment__remove" type="button"
+                      hx-post="/bundle-comments/{{.ID}}/delete" hx-target="#list" hx-swap="outerHTML"
+                      aria-label="Remove Bundle Comment">&times;</button>
+            </div>{{end}}
+            <form class="comment-add" hx-post="/bundles/{{$bundle.ID}}/comments" hx-target="#list" hx-swap="outerHTML">
+              <input type="text" name="body" placeholder="Add a Bundle Comment" required
+                     autocomplete="off" aria-label="Comment on {{.Name}}">
+            </form>
+          </section>
           {{if .Chosen}}<span class="option__badge">Bought this</span>{{else}}<button class="option__choose" type="button" hx-post="/bundles/{{.ID}}/choose" hx-target="#list" hx-swap="outerHTML" hx-confirm="{{.ChooseConfirm}}">Choose Bundle</button>{{end}}
           <details class="bundle-edit">
             <summary class="btn btn--quiet">Edit Bundle</summary>

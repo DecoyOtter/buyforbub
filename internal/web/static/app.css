@@ -566,6 +566,17 @@ input[type="text"], input[type="number"], select {
   margin: 2px 8px 2px 0;
 }
 
+.comments--bundle { margin-top: 10px; }
+.comments--option { margin-top: 10px; }
+.comments__title {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 650;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
 .comment {
   display: flex;
   align-items: baseline;

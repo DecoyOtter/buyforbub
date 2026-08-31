@@ -66,6 +66,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /bundles/{bid}", s.handleUpdateBundle)
 	s.mux.HandleFunc("POST /bundles/{bid}/delete", s.handleDeleteBundle)
 	s.mux.HandleFunc("POST /bundles/{bid}/choose", s.handleChooseBundle)
+	s.mux.HandleFunc("POST /bundles/{bid}/comments", s.handleAddBundleComment)
+	s.mux.HandleFunc("POST /bundle-comments/{cid}/delete", s.handleDeleteBundleComment)
 	s.mux.HandleFunc("GET /items/{id}", s.handleDetail)
 	s.mux.HandleFunc("POST /items/{id}", s.handleUpdate)
 	s.mux.HandleFunc("GET /items/{id}/row", s.handleRow)
@@ -112,6 +114,7 @@ type itemData struct {
 type bundleData struct {
 	store.Bundle
 	Members       []bundleMemberData
+	Comments      []store.BundleComment
 	EditItems     []bundleItemGroupData
 	Chosen        bool
 	AffectedItems string
@@ -215,6 +218,7 @@ type bundleOptionData struct {
 	PriceCents     int64
 	BundlePrice    int64
 	ChooseConfirm  string
+	Comments       []store.BundleComment
 }
 
 func (b bundleOptionData) Label() string {
@@ -306,6 +310,34 @@ func (s *Server) handleChooseBundle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.store.ChooseBundle(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderList(w, r)
+}
+
+func (s *Server) handleAddBundleComment(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.fail(w, r, errBadRequest)
+		return
+	}
+	if _, err := s.store.AddBundleComment(r.Context(), id, r.PostFormValue("body")); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderList(w, r)
+}
+
+func (s *Server) handleDeleteBundleComment(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "cid")
+	if !ok {
+		return
+	}
+	if err := s.store.DeleteBundleComment(r.Context(), id); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -532,6 +564,11 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 	bundleViews := make([]bundleData, 0, len(bundles))
 	for _, bundle := range bundles {
 		view := bundleData{Bundle: bundle, Members: make([]bundleMemberData, 0, len(bundle.Members))}
+		comments, err := s.store.ListBundleComments(ctx, bundle.ID)
+		if err != nil {
+			return listData{}, err
+		}
+		view.Comments = comments
 		membersByItem := make(map[int64]store.BundleMemberInput, len(bundle.Members))
 		affectedNames := make([]string, 0, len(bundle.Members))
 		for _, member := range bundle.Members {
@@ -657,6 +694,10 @@ func (s *Server) bundleOptionData(ctx context.Context) (map[int64]*bundleOptionD
 	result := make(map[int64]*bundleOptionData)
 	normalConfirms := make(map[int64]string)
 	for _, bundle := range bundles {
+		comments, err := s.store.ListBundleComments(ctx, bundle.ID)
+		if err != nil {
+			return nil, nil, err
+		}
 		confirm := bundleChooseConfirm(bundle, bundles, itemsByID, s.store, ctx)
 		chosen := false
 		for _, member := range bundle.Members {
@@ -669,7 +710,7 @@ func (s *Server) bundleOptionData(ctx context.Context) (map[int64]*bundleOptionD
 			if option.PriceCents == nil {
 				return nil, nil, fmt.Errorf("bundle %d has incomplete member", bundle.ID)
 			}
-			result[option.ID] = &bundleOptionData{BundleID: bundle.ID, BundleName: bundle.Name, ComponentLabel: member.ComponentLabel, ItemName: item.Name, PriceCents: *option.PriceCents, BundlePrice: bundle.PriceCents, ChooseConfirm: confirm}
+			result[option.ID] = &bundleOptionData{BundleID: bundle.ID, BundleName: bundle.Name, ComponentLabel: member.ComponentLabel, ItemName: item.Name, PriceCents: *option.PriceCents, BundlePrice: bundle.PriceCents, ChooseConfirm: confirm, Comments: comments}
 		}
 		if chosen {
 			affected := make([]string, 0, len(bundle.Members))

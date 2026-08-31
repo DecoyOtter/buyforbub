@@ -141,3 +141,6 @@ type BundleComment struct {
 	Body      string
 	CreatedAt time.Time
 }
+
+// Age is how long ago the Bundle Comment was left.
+func (c BundleComment) Age() string { return ageSince(time.Now(), c.CreatedAt) }
