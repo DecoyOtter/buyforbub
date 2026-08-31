@@ -1,6 +1,25 @@
 {{define "list"}}<div id="list" class="list">
-  {{if .Bundles}}<aside class="bundle-rail" aria-label="Bundles">
+  <aside class="bundle-rail" aria-label="Bundles">
     <div class="bundle-rail__head"><h2>Bundles</h2><span>{{len .Bundles}}</span></div>
+    <details class="bundle-create">
+      <summary class="btn btn--primary">Add Bundle</summary>
+      <form class="bundle-create__form" hx-post="/bundles" hx-target="#list" hx-swap="outerHTML">
+        <label class="bundle-create__field"><span>Name</span><input type="text" name="name" required autocomplete="off"></label>
+        <label class="bundle-create__field"><span>URL</span><input type="url" name="url" required inputmode="url" autocomplete="off"></label>
+        <label class="bundle-create__field"><span>Bundle price</span><input type="text" name="price" required inputmode="decimal" autocomplete="off"></label>
+        <label class="bundle-create__field"><span>Regular price <em>(optional)</em></span><input type="text" name="regular_price" inputmode="decimal" autocomplete="off"></label>
+        <p class="bundle-create__hint">Choose at least two Items. The Bundle price is split equally per Item.</p>
+        <div class="bundle-create__items">
+          {{range .BundleItems}}<fieldset><legend>{{.Category}}</legend>
+            {{range .Items}}<div class="bundle-create__item">
+              <label><input type="checkbox" name="item_id" value="{{.ID}}"> <strong>{{.Name}}</strong> <span>{{.Status}}{{if .ChosenOption}} · {{.ChosenOption}}{{end}}</span></label>
+              <input type="text" name="component_label_{{.ID}}" placeholder="Component label (optional)" autocomplete="off" aria-label="Component label for {{.Name}}">
+            </div>{{end}}
+          </fieldset>{{end}}
+        </div>
+        <button class="btn btn--primary" type="submit">Create Bundle</button>
+      </form>
+    </details>
     <div class="bundle-rail__cards">
       {{range .Bundles}}<details class="bundle-card{{if .Chosen}} is-chosen{{end}}">
         <summary class="bundle-card__summary">
@@ -17,7 +36,7 @@
         </div>
       </details>{{end}}
     </div>
-  </aside>{{end}}
+  </aside>
   <div class="checklist">
   <section class="progress">
     <p class="progress__text" aria-live="polite">{{.Done}} of {{.Total}} done</p>

@@ -61,6 +61,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.Serve
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
 	s.mux.HandleFunc("POST /items", s.handleAdd)
+	s.mux.HandleFunc("POST /bundles", s.handleAddBundle)
 	s.mux.HandleFunc("GET /items/{id}", s.handleDetail)
 	s.mux.HandleFunc("POST /items/{id}", s.handleUpdate)
 	s.mux.HandleFunc("GET /items/{id}/row", s.handleRow)
@@ -85,11 +86,12 @@ type pageData struct {
 }
 
 type listData struct {
-	Groups  []groupData
-	Bundles []bundleData
-	Overall store.BudgetSummary
-	Done    int
-	Total   int
+	Groups      []groupData
+	Bundles     []bundleData
+	BundleItems []bundleItemGroupData
+	Overall     store.BudgetSummary
+	Done        int
+	Total       int
 }
 
 type groupData struct {
@@ -147,6 +149,18 @@ func (m bundleMemberData) Label() string {
 
 func (m bundleMemberData) ShareText() string { return store.FormatMoney(m.ShareCents) }
 
+type bundleItemGroupData struct {
+	Category string
+	Items    []bundleItemData
+}
+
+type bundleItemData struct {
+	ID           int64
+	Name         string
+	Status       string
+	ChosenOption string
+}
+
 func (i itemData) ActualText() string {
 	if i.ActualCents == nil {
 		return ""
@@ -191,6 +205,19 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.store.Add(r.Context(), in); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderList(w, r)
+}
+
+func (s *Server) handleAddBundle(w http.ResponseWriter, r *http.Request) {
+	in, err := parseBundleInput(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if _, err := s.store.AddBundle(r.Context(), in); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -399,8 +426,19 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 		return listData{}, err
 	}
 	itemsByID := make(map[int64]store.Item, len(items))
+	chosenOptionNames := make(map[int64]string, len(items))
 	for _, item := range items {
 		itemsByID[item.ID] = item
+		options, err := s.store.ListOptions(ctx, item.ID)
+		if err != nil {
+			return listData{}, err
+		}
+		for _, option := range options {
+			if option.Chosen {
+				chosenOptionNames[item.ID] = option.Title()
+				break
+			}
+		}
 	}
 	bundleViews := make([]bundleData, 0, len(bundles))
 	for _, bundle := range bundles {
@@ -433,7 +471,17 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 		}
 		data = append(data, view)
 	}
-	return listData{Groups: data, Bundles: bundleViews, Overall: summaries.Overall, Done: done, Total: total}, nil
+	bundleItemGroups := make([]bundleItemGroupData, 0, len(groups))
+	for _, group := range groups {
+		view := bundleItemGroupData{Category: group.Category, Items: make([]bundleItemData, 0, len(group.Items))}
+		for _, item := range group.Items {
+			view.Items = append(view.Items, bundleItemData{
+				ID: item.ID, Name: item.Name, Status: item.Status, ChosenOption: chosenOptionNames[item.ID],
+			})
+		}
+		bundleItemGroups = append(bundleItemGroups, view)
+	}
+	return listData{Groups: data, Bundles: bundleViews, BundleItems: bundleItemGroups, Overall: summaries.Overall, Done: done, Total: total}, nil
 }
 
 func newItemData(item store.Item, chosenPrices map[int64]*int64) itemData {
@@ -511,6 +559,30 @@ func parseItemInput(r *http.Request) (store.ItemInput, error) {
 	}, nil
 }
 
+func parseBundleInput(r *http.Request) (store.BundleInput, error) {
+	if err := r.ParseForm(); err != nil {
+		return store.BundleInput{}, fmt.Errorf("%w: malformed form", errBadRequest)
+	}
+	members := make([]store.BundleMemberInput, 0, len(r.PostForm["item_id"]))
+	for _, rawID := range r.PostForm["item_id"] {
+		id, err := strconv.ParseInt(rawID, 10, 64)
+		if err != nil {
+			return store.BundleInput{}, store.ErrInvalidBundleMembership
+		}
+		members = append(members, store.BundleMemberInput{
+			ItemID:         id,
+			ComponentLabel: r.PostFormValue("component_label_" + rawID),
+		})
+	}
+	return store.BundleInput{
+		Name:         r.PostFormValue("name"),
+		URL:          r.PostFormValue("url"),
+		Price:        r.PostFormValue("price"),
+		RegularPrice: r.PostFormValue("regular_price"),
+		Members:      members,
+	}, nil
+}
+
 // pathID reads a numeric path segment, writing a 404 if it is not a number.
 func (s *Server) pathID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue(name), 10, 64)
@@ -541,6 +613,14 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "That does not look like a link.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidPrice):
 		http.Error(w, "Price should be a number.", http.StatusBadRequest)
+	case errors.Is(err, store.ErrInvalidBundleName):
+		http.Error(w, "Give the bundle a name.", http.StatusBadRequest)
+	case errors.Is(err, store.ErrInvalidBundlePrice):
+		http.Error(w, "Bundle price must be greater than zero with at most two decimal places.", http.StatusBadRequest)
+	case errors.Is(err, store.ErrInvalidRegularPrice):
+		http.Error(w, "Regular price must be at least the bundle price.", http.StatusBadRequest)
+	case errors.Is(err, store.ErrInvalidBundleMembership):
+		http.Error(w, "Choose at least two different items.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidComment):
 		http.Error(w, "Write something first.", http.StatusBadRequest)
 	case errors.Is(err, errBadRequest):
