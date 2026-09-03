@@ -293,12 +293,15 @@ type optionView struct {
 type bundleOptionData struct {
 	BundleID       int64
 	BundleName     string
+	ItemID         int64
 	ComponentLabel string
 	ItemName       string
 	PriceCents     int64
 	BundlePrice    int64
 	ChooseConfirm  string
 	Comments       []store.BundleComment
+	CommentBody    string
+	CommentError   string
 }
 
 func (b bundleOptionData) Label() string {
@@ -441,12 +444,39 @@ func (s *Server) handleAddBundleComment(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	itemID, inWorkspace, err := s.bundleCommentItemID(r.Context(), r, id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		s.fail(w, r, errBadRequest)
 		return
 	}
 	if _, err := s.store.AddBundleComment(r.Context(), id, r.PostFormValue("body")); err != nil {
+		if inWorkspace && isHTMX(r) && errors.Is(err, store.ErrInvalidComment) {
+			data, dataErr := s.detailData(r.Context(), itemID, false)
+			if dataErr != nil {
+				s.fail(w, r, dataErr)
+				return
+			}
+			for i := range data.Options {
+				if data.Options[i].Bundle != nil && data.Options[i].Bundle.BundleID == id {
+					data.Options[i].Bundle.CommentBody = r.PostFormValue("body")
+					data.Options[i].Bundle.CommentError = "Write something first."
+				}
+			}
+			w.Header().Set("HX-Retarget", "#workspace-content")
+			w.Header().Set("HX-Reswap", "innerHTML")
+			w.Header().Set("HX-Trigger", "bundle-comment-invalid")
+			s.render(w, r, http.StatusOK, "detail", data)
+			return
+		}
 		s.fail(w, r, err)
+		return
+	}
+	if inWorkspace {
+		s.renderDetail(w, r, itemID, false)
 		return
 	}
 	s.renderList(w, r)
@@ -457,11 +487,46 @@ func (s *Server) handleDeleteBundleComment(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+	comment, err := s.store.GetBundleComment(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	itemID, inWorkspace, err := s.bundleCommentItemID(r.Context(), r, comment.BundleID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	if err := s.store.DeleteBundleComment(r.Context(), id); err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	if inWorkspace {
+		s.renderDetail(w, r, itemID, false)
+		return
+	}
 	s.renderList(w, r)
+}
+
+func (s *Server) bundleCommentItemID(ctx context.Context, r *http.Request, bundleID int64) (int64, bool, error) {
+	rawID := r.URL.Query().Get("item_id")
+	if rawID == "" {
+		return 0, false, nil
+	}
+	itemID, err := strconv.ParseInt(rawID, 10, 64)
+	if err != nil || itemID <= 0 {
+		return 0, true, errBadRequest
+	}
+	bundle, err := s.store.GetBundle(ctx, bundleID)
+	if err != nil {
+		return 0, true, err
+	}
+	for _, member := range bundle.Members {
+		if member.ItemID == itemID {
+			return itemID, true, nil
+		}
+	}
+	return 0, true, store.ErrNotFound
 }
 
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
@@ -979,7 +1044,7 @@ func (s *Server) bundleOptionData(ctx context.Context) (map[int64]*bundleOptionD
 			if option.PriceCents == nil {
 				return nil, nil, fmt.Errorf("bundle %d has incomplete member", bundle.ID)
 			}
-			result[option.ID] = &bundleOptionData{BundleID: bundle.ID, BundleName: bundle.Name, ComponentLabel: member.ComponentLabel, ItemName: item.Name, PriceCents: *option.PriceCents, BundlePrice: bundle.PriceCents, ChooseConfirm: confirm, Comments: comments}
+			result[option.ID] = &bundleOptionData{BundleID: bundle.ID, BundleName: bundle.Name, ItemID: member.ItemID, ComponentLabel: member.ComponentLabel, ItemName: item.Name, PriceCents: *option.PriceCents, BundlePrice: bundle.PriceCents, ChooseConfirm: confirm, Comments: comments}
 		}
 		if chosen {
 			affected := make([]string, 0, len(bundle.Members))

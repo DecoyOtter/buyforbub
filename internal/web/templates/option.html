@@ -13,14 +13,15 @@
           <h3 class="comments__title">Bundle Comments</h3>
           {{range .Bundle.Comments}}<div class="comment">
             <span class="comment__body">{{.Body}}</span><span class="comment__age">{{.Age}}</span>
-            <button class="comment__remove" type="button" hx-post="/bundle-comments/{{.ID}}/delete" hx-target="#list" hx-swap="outerHTML" aria-label="Remove Bundle Comment">&times;</button>
+            <button class="comment__remove" type="button" hx-post="/bundle-comments/{{.ID}}/delete?item_id={{$.Bundle.ItemID}}" hx-target="#workspace-content" hx-swap="innerHTML" aria-label="Remove Bundle Comment">&times;</button>
           </div>{{end}}
-          <form class="comment-add" hx-post="/bundles/{{.Bundle.BundleID}}/comments" hx-target="#list" hx-swap="outerHTML">
-            <input type="text" name="body" placeholder="Add a Bundle Comment" required autocomplete="off" aria-label="Comment on {{.Bundle.BundleName}}">
+          {{with .Bundle.CommentError}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+          <form class="comment-add" hx-post="/bundles/{{.Bundle.BundleID}}/comments?item_id={{.Bundle.ItemID}}" hx-target="#workspace-content" hx-swap="innerHTML" hx-on::after-request="if (event.detail.successful) this.reset();">
+            <input type="text" name="body" value="{{.Bundle.CommentBody}}" placeholder="Add a Bundle Comment" required autocomplete="off" aria-label="Comment on {{.Bundle.BundleName}}">
           </form>
         </div>{{end}}
-        <div class="comments{{if .Bundle}} comments--option{{end}}" aria-label="Comments">
-          <h3 class="comments__title">Comments</h3>
+        <div class="comments{{if .Bundle}} comments--option{{end}}" aria-label="{{if .Bundle}}Item-specific Option Comments{{else}}Comments{{end}}">
+          <h3 class="comments__title">{{if .Bundle}}Item-specific Option Comments{{else}}Comments{{end}}</h3>
           {{range .Comments}}<div class="comment">
             <span class="comment__body">{{.Body}}</span><span class="comment__age">{{.Age}}</span>
             <button class="comment__remove" type="button" hx-post="/comments/{{.ID}}/delete" hx-target="#workspace-content" hx-swap="innerHTML" aria-label="Remove comment">&times;</button>
