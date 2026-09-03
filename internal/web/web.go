@@ -208,9 +208,17 @@ type detailData struct {
 	Item        store.Item
 	ActualCents *int64
 	Options     []optionView
+	OptionAdd   optionFormData
 	Categories  []string
 	Editing     bool
 	Edit        editItemData
+}
+
+type optionFormData struct {
+	URL    string
+	Label  string
+	Price  string
+	Errors map[string]string
 }
 
 type editItemData struct {
@@ -236,6 +244,8 @@ type optionView struct {
 	Comments      []store.Comment
 	Bundle        *bundleOptionData
 	ChooseConfirm string
+	CommentBody   string
+	CommentError  string
 }
 
 type bundleOptionData struct {
@@ -464,12 +474,23 @@ func (s *Server) handleAddOption(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, errBadRequest)
 		return
 	}
-	_, err := s.store.AddOption(r.Context(), id, store.OptionInput{
-		URL:   r.PostFormValue("url"),
-		Label: r.PostFormValue("label"),
-		Price: r.PostFormValue("price"),
-	})
+	form := optionFormData{URL: r.PostFormValue("url"), Label: r.PostFormValue("label"), Price: r.PostFormValue("price")}
+	_, err := s.store.AddOption(r.Context(), id, store.OptionInput{URL: form.URL, Label: form.Label, Price: form.Price})
 	if err != nil {
+		if isHTMX(r) && len(optionFieldErrors(err)) > 0 {
+			data, dataErr := s.detailData(r.Context(), id, false)
+			if dataErr != nil {
+				s.fail(w, r, dataErr)
+				return
+			}
+			form.Errors = optionFieldErrors(err)
+			data.OptionAdd = form
+			w.Header().Set("HX-Retarget", "#workspace-content")
+			w.Header().Set("HX-Reswap", "innerHTML")
+			w.Header().Set("HX-Trigger", "option-invalid")
+			s.render(w, r, http.StatusOK, "detail", data)
+			return
+		}
 		s.fail(w, r, err)
 		return
 	}
@@ -521,8 +542,33 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, errBadRequest)
 		return
 	}
-	c, err := s.store.AddComment(r.Context(), id, r.PostFormValue("body"))
+	body := r.PostFormValue("body")
+	c, err := s.store.AddComment(r.Context(), id, body)
 	if err != nil {
+		if isHTMX(r) && errors.Is(err, store.ErrInvalidComment) {
+			opt, getErr := s.store.GetOption(r.Context(), id)
+			if getErr != nil {
+				s.fail(w, r, getErr)
+				return
+			}
+			data, dataErr := s.detailData(r.Context(), opt.ItemID, false)
+			if dataErr != nil {
+				s.fail(w, r, dataErr)
+				return
+			}
+			for i := range data.Options {
+				if data.Options[i].ID == id {
+					data.Options[i].CommentBody = body
+					data.Options[i].CommentError = "Write something first."
+					break
+				}
+			}
+			w.Header().Set("HX-Retarget", "#workspace-content")
+			w.Header().Set("HX-Reswap", "innerHTML")
+			w.Header().Set("HX-Trigger", "comment-invalid")
+			s.render(w, r, http.StatusOK, "detail", data)
+			return
+		}
 		s.fail(w, r, err)
 		return
 	}
@@ -716,10 +762,26 @@ func (s *Server) detailData(ctx context.Context, id int64, editing bool) (detail
 		Item:        item,
 		ActualCents: prices[id],
 		Options:     views,
+		OptionAdd:   newOptionFormData("", "", "", nil),
 		Categories:  store.Categories,
 		Editing:     editing,
 		Edit:        newEditItemData(item),
 	}, nil
+}
+
+func newOptionFormData(url, label, price string, fieldErrors map[string]string) optionFormData {
+	return optionFormData{URL: url, Label: label, Price: price, Errors: fieldErrors}
+}
+
+func optionFieldErrors(err error) map[string]string {
+	errorsByField := make(map[string]string)
+	switch {
+	case errors.Is(err, store.ErrInvalidURL):
+		errorsByField["url"] = "That does not look like a link."
+	case errors.Is(err, store.ErrInvalidPrice):
+		errorsByField["price"] = "Price should be a number."
+	}
+	return errorsByField
 }
 
 func newEditItemData(item store.Item) editItemData {

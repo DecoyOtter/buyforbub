@@ -32,14 +32,26 @@
       {{end}}
 
       <form class="option-add"
-            hx-post="/items/{{.Item.ID}}/options" hx-target="#item-{{.Item.ID}}" hx-swap="outerHTML"
+            hx-post="/items/{{.Item.ID}}/options" hx-target="#workspace-content" hx-swap="innerHTML"
             hx-on::after-request="if (event.detail.successful) { this.reset(); this.querySelector('input[name=url]').focus(); }">
-        <input class="option-add__url" type="text" name="url" placeholder="Paste a link" required
-               autocomplete="off" aria-label="Link">
-        <input class="option-add__label" type="text" name="label" placeholder="Label (optional)"
-               autocomplete="off" aria-label="Label">
-        <input class="option-add__price" type="text" name="price" placeholder="Price"
-               inputmode="decimal" autocomplete="off" aria-label="Price">
+        <label class="option-add__field option-add__field--url{{if index .OptionAdd.Errors "url"}} has-error{{end}}">
+          <span>Shop link</span>
+          <input class="option-add__url" type="text" name="url" value="{{.OptionAdd.URL}}" placeholder="Paste a link" required
+                 autocomplete="off" aria-label="Shop link">
+          {{with index .OptionAdd.Errors "url"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+        </label>
+        <label class="option-add__field option-add__field--label{{if index .OptionAdd.Errors "label"}} has-error{{end}}">
+          <span>Label</span>
+          <input class="option-add__label" type="text" name="label" value="{{.OptionAdd.Label}}" placeholder="Optional"
+                 autocomplete="off" aria-label="Label">
+          {{with index .OptionAdd.Errors "label"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+        </label>
+        <label class="option-add__field option-add__field--price{{if index .OptionAdd.Errors "price"}} has-error{{end}}">
+          <span>Price</span>
+          <input class="option-add__price" type="text" name="price" value="{{.OptionAdd.Price}}" placeholder="Optional"
+                 inputmode="decimal" autocomplete="off" aria-label="Price">
+          {{with index .OptionAdd.Errors "price"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+        </label>
         <button class="option-add__submit" type="submit">Add</button>
       </form>
     </section>

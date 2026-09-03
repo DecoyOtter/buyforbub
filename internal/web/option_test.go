@@ -97,6 +97,51 @@ func TestAddOptionReturnsOpenPanel(t *testing.T) {
 	assertNotContains(t, body, "<!doctype html>")
 }
 
+func TestNormalOptionsRenderComparisonRows(t *testing.T) {
+	s, st := newServer(t)
+	it := mustAdd(t, st, "Cot", "Nursery")
+	first := mustAddOption(t, st, it.ID, store.OptionInput{URL: "https://shop.example/cot", Label: "Boori", Price: "$1,199"})
+	second := mustAddOption(t, st, it.ID, store.OptionInput{URL: "https://ikea.example/cot"})
+	mustAddComment(t, st, first.ID, "good edges")
+	mustAddComment(t, st, first.ID, "too expensive")
+
+	rec := do(t, s, http.MethodGet, "/items/"+itoa(it.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `class="option__details"`)
+	assertContains(t, body, `href="https://shop.example/cot"`)
+	assertContains(t, body, "Boori")
+	assertContains(t, body, "$1,199")
+	assertContains(t, body, "2 comments")
+	assertContains(t, body, "ikea.example")
+	assertContains(t, body, `hx-post="/options/`+itoa(first.ID)+`/choose"`)
+	assertContains(t, body, `hx-post="/options/`+itoa(second.ID)+`/choose"`)
+	assertContains(t, body, "Add a comment")
+	assertNotContains(t, body, `<details class="option__details" open`)
+}
+
+func TestAddOptionInvalidHTMXRendersFieldError(t *testing.T) {
+	s, st := newServer(t)
+	it := mustAdd(t, st, "Cot", "Nursery")
+
+	rec := doHTMX(t, s, http.MethodPost, "/items/"+itoa(it.ID)+"/options", url.Values{
+		"url": {"https://shop.example/cot"}, "price": {"not money"},
+	})
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Header().Get("HX-Retarget"), "#workspace-content")
+	assertContains(t, rec.Header().Get("HX-Trigger"), "option-invalid")
+	assertContains(t, rec.Body.String(), "Price should be a number.")
+	assertContains(t, rec.Body.String(), `value="not money"`)
+
+	options, err := st.ListOptions(context.Background(), it.ID)
+	if err != nil {
+		t.Fatalf("ListOptions: %v", err)
+	}
+	if len(options) != 0 {
+		t.Fatalf("invalid option changed Store: %#v", options)
+	}
+}
+
 func TestOptionCountShownOnRow(t *testing.T) {
 	s, st := newServer(t)
 	it := mustAdd(t, st, "Cot", "Nursery")

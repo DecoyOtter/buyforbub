@@ -699,27 +699,78 @@ input[type="text"], input[type="number"], select {
 }
 
 .option {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 4px 8px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 0 4px 0 12px;
   border-top: 1px solid var(--border);
 }
 
 .option:first-child { border-top: 0; }
 
+.option__main { min-width: 0; }
+
+.option__details > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 8px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.option__details > summary::-webkit-details-marker { display: none; }
+.option__details > summary::before { content: "+"; flex: none; width: 16px; color: var(--accent); font: 700 1.1rem/1 "DM Mono", monospace; }
+.option__details[open] > summary::before { content: "−"; }
+
+.option__title { min-width: 0; flex: 1; }
+
 .option__link {
-  flex: 1;
-  min-width: 8rem;
   color: var(--text);
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 
 .option__price {
+  flex: none;
   color: var(--muted);
   font-size: 0.88rem;
   font-variant-numeric: tabular-nums;
+}
+
+.option__comment-count {
+  flex: none;
+  color: var(--muted);
+  font-size: .75rem;
+  white-space: nowrap;
+}
+
+.option__bundle-badge {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-size: .65rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.option__body {
+  margin: 0 0 12px 24px;
+  padding: 4px 0 0 12px;
+  border-left: 2px solid var(--accent-weak);
+}
+
+.option__bundle-meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; color: var(--muted); font-size: .78rem; }
+
+.option__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 52px;
 }
 
 .option__choose {
@@ -762,9 +813,8 @@ input[type="text"], input[type="number"], select {
 
 /* Sits on its own line under the option, which is a wrapping flex row. */
 .comments {
-  flex-basis: 100%;
   min-width: 0;
-  margin: 2px 8px 2px 0;
+  margin: 2px 8px 8px 0;
 }
 
 .comments--bundle { margin-top: 10px; }
@@ -844,6 +894,9 @@ input[type="text"], input[type="number"], select {
   gap: 8px;
 }
 
+.option-add__field { display: grid; gap: 4px; min-width: 0; }
+.option-add__field > span:first-child { color: var(--muted); font-size: .68rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.option-add__field.has-error input { border-color: var(--danger); }
 .option-add__url { grid-column: 1 / -1; }
 
 .option-add input {

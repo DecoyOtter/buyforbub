@@ -75,6 +75,26 @@ func TestAddCommentReturnsOpenPanel(t *testing.T) {
 	assertNotContains(t, body, "<!doctype html>")
 }
 
+func TestAddCommentInvalidHTMXRendersFieldError(t *testing.T) {
+	s, st := newServer(t)
+	it := mustAdd(t, st, "Cot", "Nursery")
+	opt := mustAddOption(t, st, it.ID, store.OptionInput{URL: "https://a.example.com"})
+
+	rec := doHTMX(t, s, http.MethodPost, "/options/"+itoa(opt.ID)+"/comments", url.Values{"body": {"   "}})
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Header().Get("HX-Retarget"), "#workspace-content")
+	assertContains(t, rec.Header().Get("HX-Trigger"), "comment-invalid")
+	assertContains(t, rec.Body.String(), "Write something first.")
+
+	comments, err := st.ListComments(context.Background(), opt.ID)
+	if err != nil {
+		t.Fatalf("ListComments: %v", err)
+	}
+	if len(comments) != 0 {
+		t.Fatalf("invalid comment changed Store: %#v", comments)
+	}
+}
+
 // Comments belong to one option, not to the item.
 func TestCommentsStayOnTheirOption(t *testing.T) {
 	s, st := newServer(t)
