@@ -41,10 +41,12 @@ func TestManifestIsValid(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 
 	var m struct {
-		Name     string `json:"name"`
-		StartURL string `json:"start_url"`
-		Display  string `json:"display"`
-		Icons    []struct {
+		Name            string `json:"name"`
+		StartURL        string `json:"start_url"`
+		Display         string `json:"display"`
+		BackgroundColor string `json:"background_color"`
+		ThemeColor      string `json:"theme_color"`
+		Icons           []struct {
 			Src   string `json:"src"`
 			Sizes string `json:"sizes"`
 		} `json:"icons"`
@@ -62,6 +64,12 @@ func TestManifestIsValid(t *testing.T) {
 	if m.Display != "standalone" {
 		t.Errorf("display = %q, want %q", m.Display, "standalone")
 	}
+	if m.BackgroundColor != "#fff8eb" {
+		t.Errorf("background_color = %q, want %q", m.BackgroundColor, "#fff8eb")
+	}
+	if m.ThemeColor != "#273047" {
+		t.Errorf("theme_color = %q, want %q", m.ThemeColor, "#273047")
+	}
 	if len(m.Icons) == 0 {
 		t.Fatal("manifest lists no icons")
 	}
@@ -72,6 +80,47 @@ func TestManifestIsValid(t *testing.T) {
 		if got.Code != http.StatusOK {
 			t.Errorf("icon %s (%s): status %d, want 200", icon.Src, icon.Sizes, got.Code)
 		}
+	}
+}
+
+func TestLocalVisualFoundation(t *testing.T) {
+	s, _ := newServer(t)
+
+	page := do(t, s, http.MethodGet, "/", nil).Body.String()
+	css := do(t, s, http.MethodGet, "/static/app.css", nil).Body.String()
+	for _, body := range []string{page, css} {
+		assertNotContains(t, body, "fonts.googleapis.com")
+		assertNotContains(t, body, "fonts.gstatic.com")
+		assertNotContains(t, body, "prefers-color-scheme")
+		assertNotContains(t, body, "color-scheme: dark")
+	}
+
+	fonts := []string{
+		"fraunces/fraunces-latin-500.woff2",
+		"fraunces/fraunces-latin-700.woff2",
+		"nunito/nunito-latin-500.woff2",
+		"nunito/nunito-latin-700.woff2",
+		"nunito/nunito-latin-800.woff2",
+		"nunito/nunito-latin-900.woff2",
+		"dm-mono/dm-mono-latin-400.woff2",
+		"dm-mono/dm-mono-latin-500.woff2",
+	}
+	for _, font := range fonts {
+		font := font
+		t.Run(font, func(t *testing.T) {
+			path := "/static/fonts/" + font
+			assertContains(t, css, path)
+			rec := do(t, s, http.MethodGet, path, nil)
+			assertStatus(t, rec, http.StatusOK)
+			if rec.Body.Len() == 0 {
+				t.Errorf("%s is empty", path)
+			}
+		})
+	}
+
+	for _, license := range []string{"fraunces/OFL.txt", "nunito/OFL.txt", "dm-mono/OFL.txt"} {
+		rec := do(t, s, http.MethodGet, "/static/fonts/"+license, nil)
+		assertStatus(t, rec, http.StatusOK)
 	}
 }
 
