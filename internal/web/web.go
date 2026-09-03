@@ -835,6 +835,21 @@ func (s *Server) bundleOptionData(ctx context.Context) (map[int64]*bundleOptionD
 			}
 		}
 	}
+	for _, item := range items {
+		if _, alreadyConfirmed := normalConfirms[item.ID]; alreadyConfirmed {
+			continue
+		}
+		options, err := s.store.ListOptions(ctx, item.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, option := range options {
+			if option.Chosen {
+				normalConfirms[item.ID] = "Choosing this Option will replace " + option.Title() + ". Continue?"
+				break
+			}
+		}
+	}
 	return result, normalConfirms, nil
 }
 

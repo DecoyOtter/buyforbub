@@ -180,6 +180,23 @@ func TestChooseOptionMarksItemBought(t *testing.T) {
 	assertNotContains(t, body, "Choose</button>")
 }
 
+func TestNormalChoiceReplacementConfirmation(t *testing.T) {
+	s, st := newServer(t)
+	it := mustAdd(t, st, "Cot", "Nursery")
+	chosen := mustAddOption(t, st, it.ID, store.OptionInput{URL: "https://shop.example/chosen", Label: "Chosen cot"})
+	other := mustAddOption(t, st, it.ID, store.OptionInput{URL: "https://shop.example/other", Label: "Other cot"})
+	if _, err := st.ChooseOption(context.Background(), chosen.ID); err != nil {
+		t.Fatalf("ChooseOption: %v", err)
+	}
+
+	rec := do(t, s, http.MethodGet, "/items/"+itoa(it.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `data-confirm="Choosing this Option will replace Chosen cot. Continue?"`)
+	assertContains(t, body, `hx-post="/options/`+itoa(other.ID)+`/choose"`)
+	assertContains(t, body, `data-close-on-success="true"`)
+}
+
 // Marking the item needed again must clear the "we bought this one" badge.
 func TestUntogglingClearsChosenBadge(t *testing.T) {
 	s, st := newServer(t)
@@ -269,8 +286,17 @@ func TestNormalChoiceNamesBrokenBundle(t *testing.T) {
 
 	rec := do(t, s, http.MethodGet, "/items/"+itoa(cot.ID), nil)
 	assertStatus(t, rec, http.StatusOK)
-	assertContains(t, rec.Body.String(), "Choosing this Option will unchoose Sleep bundle and mark Cot and Pram needed.")
-	assertContains(t, rec.Body.String(), `hx-post="/options/`+itoa(normal.ID)+`/choose"`)
+	body := rec.Body.String()
+	assertContains(t, body, "Choosing this Option will unchoose Sleep bundle and mark Cot and Pram needed.")
+	assertContains(t, body, `hx-post="/options/`+itoa(normal.ID)+`/choose"`)
+	assertContains(t, body, `data-close-on-success="true"`)
+
+	// The existing choice route still returns the refreshed list after the
+	// confirmation controller allows the request through.
+	rec = do(t, s, http.MethodPost, "/options/"+itoa(normal.ID)+"/choose", nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `id="list"`)
+	assertContains(t, rec.Body.String(), "1 of 2 done")
 }
 
 // html/template must neutralise a dangerous href even if one reaches the DB.
