@@ -30,6 +30,47 @@
     if (form) surface.dataset.surfaceInitial = formSnapshot(form);
   }
 
+  function parseMoney(value) {
+    const match = value.trim().match(/^(\d+)(?:\.(\d{1,2}))?$/);
+    if (!match) return null;
+    return Number(match[1]) * 100 + Number((match[2] || "").padEnd(2, "0"));
+  }
+
+  function formatMoney(cents) {
+    return `$${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
+  }
+
+  function updateBundleForm(form) {
+    const selected = [...form.querySelectorAll('input[name="item_id"]:checked')];
+    selected.forEach((checkbox) => {
+      checkbox.closest(".bundle-form__item")?.classList.add("is-selected");
+    });
+    form.querySelectorAll('input[name="item_id"]:not(:checked)').forEach((checkbox) => {
+      checkbox.closest(".bundle-form__item")?.classList.remove("is-selected");
+    });
+
+    const output = form.querySelector("[data-bundle-share]");
+    if (!output) return;
+    const price = parseMoney(form.querySelector('input[name="price"]')?.value || "");
+    if (selected.length < 2) {
+      output.textContent = selected.length ? "Choose one more Item." : "Choose Items to see their share.";
+      return;
+    }
+    if (price === null || price <= 0) {
+      output.textContent = `${selected.length} Items selected. Enter a Bundle price.`;
+      return;
+    }
+    const share = Math.floor(price / selected.length);
+    const remainder = price % selected.length;
+    output.textContent = remainder
+      ? `Allocated: ${formatMoney(share + 1)} first, ${formatMoney(share)} each after.`
+      : `Allocated: ${formatMoney(share)} per Item.`;
+  }
+
+  function refreshBundleForms(root) {
+    root.querySelectorAll("[data-bundle-form]").forEach(updateBundleForm);
+  }
+
   function isDirty(surface) {
     return [...surface.querySelectorAll("form")].some((form) =>
       form.dataset.surfaceInitial !== undefined && form.dataset.surfaceInitial !== formSnapshot(form),
@@ -172,6 +213,16 @@
     if (event.target.closest("[data-confirm-accept]")) acceptConfirmation();
   }, true);
 
+  document.addEventListener("input", (event) => {
+    const form = event.target.closest("[data-bundle-form]");
+    if (form) updateBundleForm(form);
+  });
+
+  document.addEventListener("change", (event) => {
+    const form = event.target.closest("[data-bundle-form]");
+    if (form) updateBundleForm(form);
+  });
+
   document.addEventListener("submit", (event) => {
     const form = event.target.closest("form[data-confirm]");
     if (!form || isAllowed(form)) return;
@@ -212,6 +263,7 @@
     } else {
       rememberForms(surface);
     }
+    refreshBundleForms(surface);
     if (!itemValidation && !validation) rememberSurfaceInitial(surface);
     focusSurface(surface);
   });

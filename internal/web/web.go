@@ -61,7 +61,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.Serve
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
+	s.mux.HandleFunc("GET /bundles/new", s.handleNewBundle)
 	s.mux.HandleFunc("GET /bundles/{bid}", s.handleBundleDetail)
+	s.mux.HandleFunc("GET /bundles/{bid}/edit", s.handleBundleEdit)
 	s.mux.HandleFunc("POST /items", s.handleAdd)
 	s.mux.HandleFunc("POST /bundles", s.handleAddBundle)
 	s.mux.HandleFunc("POST /bundles/{bid}", s.handleUpdateBundle)
@@ -132,6 +134,44 @@ type bundleData struct {
 	ChooseConfirm string
 }
 
+type bundleWorkspaceData struct {
+	Bundle *bundleData
+	Form   *bundleFormData
+}
+
+type bundleFormData struct {
+	ID           int64
+	Editing      bool
+	Name         string
+	URL          string
+	Price        string
+	RegularPrice string
+	Items        []bundleItemGroupData
+	Selected     int
+	Errors       map[string]string
+}
+
+func (f bundleFormData) Action() string {
+	if f.Editing {
+		return "/bundles/" + strconv.FormatInt(f.ID, 10)
+	}
+	return "/bundles"
+}
+
+func (f bundleFormData) Heading() string {
+	if f.Editing {
+		return "Edit Bundle"
+	}
+	return "Add a Bundle"
+}
+
+func (f bundleFormData) SubmitText() string {
+	if f.Editing {
+		return "Save Bundle"
+	}
+	return "Create Bundle"
+}
+
 func (b bundleData) PriceText() string { return store.FormatMoney(b.PriceCents) }
 
 func (b bundleData) PriceInput() string { return centsInput(b.PriceCents) }
@@ -169,6 +209,7 @@ func (b bundleData) SavingsPercent() int64 {
 }
 
 type bundleMemberData struct {
+	ItemID         int64
 	ItemName       string
 	ComponentLabel string
 	ShareCents     int64
@@ -299,16 +340,27 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAddBundle(w http.ResponseWriter, r *http.Request) {
-	in, err := parseBundleInput(r)
+	in, form, err := parseBundleInput(r)
+	if err != nil {
+		s.renderBundleError(w, r, 0, form, in, err)
+		return
+	}
+	bundle, err := s.store.AddBundle(r.Context(), in)
+	if err != nil {
+		s.renderBundleError(w, r, 0, form, in, err)
+		return
+	}
+	s.renderBundleWorkspace(w, r, bundle.ID)
+}
+
+func (s *Server) handleNewBundle(w http.ResponseWriter, r *http.Request) {
+	list, err := s.listData(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if _, err := s.store.AddBundle(r.Context(), in); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	s.renderList(w, r)
+	form := newBundleFormData(list)
+	s.render(w, r, http.StatusOK, "bundle-detail", bundleWorkspaceData{Form: &form})
 }
 
 func (s *Server) handleBundleDetail(w http.ResponseWriter, r *http.Request) {
@@ -317,6 +369,26 @@ func (s *Server) handleBundleDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderBundleWorkspace(w, r, id)
+}
+
+func (s *Server) handleBundleEdit(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	list, err := s.listData(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	for i := range list.Bundles {
+		if list.Bundles[i].ID == id {
+			form := bundleFormForBundle(list, list.Bundles[i])
+			s.render(w, r, http.StatusOK, "bundle-detail", bundleWorkspaceData{Form: &form})
+			return
+		}
+	}
+	s.fail(w, r, store.ErrNotFound)
 }
 
 func (s *Server) handleUpdateBundle(w http.ResponseWriter, r *http.Request) {
@@ -328,16 +400,16 @@ func (s *Server) handleUpdateBundle(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	in, err := parseBundleInput(r)
+	in, form, err := parseBundleInput(r)
 	if err != nil {
-		s.fail(w, r, err)
+		s.renderBundleError(w, r, id, form, in, err)
 		return
 	}
 	if _, err := s.store.UpdateBundle(r.Context(), id, in); err != nil {
-		s.fail(w, r, err)
+		s.renderBundleError(w, r, id, form, in, err)
 		return
 	}
-	s.renderList(w, r)
+	s.renderBundleWorkspace(w, r, id)
 }
 
 func (s *Server) handleDeleteBundle(w http.ResponseWriter, r *http.Request) {
@@ -669,7 +741,7 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 				return listData{}, fmt.Errorf("bundle %d has incomplete member %d", bundle.ID, member.ID)
 			}
 			view.Members = append(view.Members, bundleMemberData{
-				ItemName: item.Name, ComponentLabel: member.ComponentLabel, ShareCents: *option.PriceCents,
+				ItemID: member.ItemID, ItemName: item.Name, ComponentLabel: member.ComponentLabel, ShareCents: *option.PriceCents,
 			})
 			membersByItem[member.ItemID] = store.BundleMemberInput{ComponentLabel: member.ComponentLabel}
 			affectedNames = append(affectedNames, item.Name)
@@ -748,11 +820,71 @@ func (s *Server) renderBundleWorkspace(w http.ResponseWriter, r *http.Request, i
 	}
 	for _, bundle := range list.Bundles {
 		if bundle.ID == id {
-			s.render(w, r, http.StatusOK, "bundle-detail", bundle)
+			s.render(w, r, http.StatusOK, "bundle-detail", bundleWorkspaceData{Bundle: &bundle})
 			return
 		}
 	}
 	s.fail(w, r, store.ErrNotFound)
+}
+
+func newBundleFormData(list listData) bundleFormData {
+	return bundleFormData{Items: list.BundleItems, Errors: map[string]string{}}
+}
+
+func bundleFormForBundle(list listData, bundle bundleData) bundleFormData {
+	members := make(map[int64]store.BundleMemberInput, len(bundle.Members))
+	for _, member := range bundle.Members {
+		members[member.ItemID] = store.BundleMemberInput{ItemID: member.ItemID, ComponentLabel: member.ComponentLabel}
+	}
+	return bundleFormData{
+		ID: bundle.ID, Editing: true, Name: bundle.Name, URL: bundle.URL,
+		Price: bundle.PriceInput(), RegularPrice: bundle.RegularPriceInput(),
+		Items:    bundleItemsForGroups(groupsFromList(list), nil, members),
+		Selected: len(members), Errors: map[string]string{},
+	}
+}
+
+func groupsFromList(list listData) []store.CategoryGroup {
+	groups := make([]store.CategoryGroup, 0, len(list.Groups))
+	for _, group := range list.Groups {
+		items := make([]store.Item, 0, len(group.Items))
+		for _, item := range group.Items {
+			items = append(items, item.Item)
+		}
+		groups = append(groups, store.CategoryGroup{Category: group.Category, Items: items})
+	}
+	return groups
+}
+
+func bundleFormForInput(list listData, id int64, editing bool, in store.BundleInput, err error) bundleFormData {
+	members := make(map[int64]store.BundleMemberInput, len(in.Members))
+	for _, member := range in.Members {
+		members[member.ItemID] = member
+	}
+	return bundleFormData{
+		ID: id, Editing: editing, Name: in.Name, URL: in.URL, Price: in.Price,
+		RegularPrice: in.RegularPrice,
+		Items:        bundleItemsForGroups(groupsFromList(list), nil, members),
+		Selected:     len(members), Errors: bundleFieldErrors(err, in),
+	}
+}
+
+func (s *Server) renderBundleError(w http.ResponseWriter, r *http.Request, id int64, parsed bundleFormData, in store.BundleInput, err error) {
+	if !isHTMX(r) {
+		s.fail(w, r, err)
+		return
+	}
+	list, listErr := s.listData(r.Context())
+	if listErr != nil {
+		s.fail(w, r, listErr)
+		return
+	}
+	form := bundleFormForInput(list, id, id != 0, in, err)
+	form.Name, form.URL, form.Price, form.RegularPrice = parsed.Name, parsed.URL, parsed.Price, parsed.RegularPrice
+	w.Header().Set("HX-Retarget", "#workspace-content")
+	w.Header().Set("HX-Reswap", "innerHTML")
+	w.Header().Set("HX-Trigger", "bundle-invalid")
+	s.render(w, r, http.StatusOK, "bundle-form", form)
 }
 
 func (s *Server) detailData(ctx context.Context, id int64, editing bool) (detailData, error) {
@@ -1051,15 +1183,21 @@ func addItemFieldErrors(err error) map[string]string {
 
 func isHTMX(r *http.Request) bool { return r.Header.Get("HX-Request") == "true" }
 
-func parseBundleInput(r *http.Request) (store.BundleInput, error) {
+func parseBundleInput(r *http.Request) (store.BundleInput, bundleFormData, error) {
 	if err := r.ParseForm(); err != nil {
-		return store.BundleInput{}, fmt.Errorf("%w: malformed form", errBadRequest)
+		return store.BundleInput{}, bundleFormData{}, fmt.Errorf("%w: malformed form", errBadRequest)
+	}
+	form := bundleFormData{
+		Name: r.PostFormValue("name"), URL: r.PostFormValue("url"), Price: r.PostFormValue("price"),
+		RegularPrice: r.PostFormValue("regular_price"), Errors: map[string]string{},
 	}
 	members := make([]store.BundleMemberInput, 0, len(r.PostForm["item_id"]))
 	for _, rawID := range r.PostForm["item_id"] {
 		id, err := strconv.ParseInt(rawID, 10, 64)
 		if err != nil {
-			return store.BundleInput{}, store.ErrInvalidBundleMembership
+			return store.BundleInput{
+				Name: form.Name, URL: form.URL, Price: form.Price, RegularPrice: form.RegularPrice,
+			}, form, store.ErrInvalidBundleMembership
 		}
 		members = append(members, store.BundleMemberInput{
 			ItemID:         id,
@@ -1072,7 +1210,39 @@ func parseBundleInput(r *http.Request) (store.BundleInput, error) {
 		Price:        r.PostFormValue("price"),
 		RegularPrice: r.PostFormValue("regular_price"),
 		Members:      members,
-	}, nil
+	}, form, nil
+}
+
+func bundleFieldErrors(err error, in store.BundleInput) map[string]string {
+	errorsByField := make(map[string]string)
+	switch {
+	case errors.Is(err, store.ErrInvalidBundleName):
+		errorsByField["name"] = "Give the bundle a name."
+	case errors.Is(err, store.ErrInvalidURL):
+		errorsByField["url"] = "That does not look like a link."
+	case errors.Is(err, store.ErrInvalidRegularPrice):
+		errorsByField["regular_price"] = "Regular price must be at least the bundle price."
+	case errors.Is(err, store.ErrInvalidBundlePrice):
+		if hasBundlePriceShape(in.Price) && strings.TrimSpace(in.RegularPrice) != "" {
+			errorsByField["regular_price"] = "Regular price must be a number with at most two decimal places."
+		} else {
+			errorsByField["price"] = "Bundle price must be greater than zero with at most two decimal places."
+		}
+	case errors.Is(err, store.ErrInvalidBundleMembership), errors.Is(err, store.ErrNotFound):
+		errorsByField["members"] = "Choose at least two different Items."
+	}
+	return errorsByField
+}
+
+func hasBundlePriceShape(raw string) bool {
+	parts := strings.Split(strings.TrimSpace(raw), ".")
+	if len(parts) > 2 || parts[0] == "" {
+		return false
+	}
+	if _, err := strconv.ParseInt(parts[0], 10, 64); err != nil {
+		return false
+	}
+	return len(parts) == 1 || (len(parts[1]) > 0 && len(parts[1]) <= 2)
 }
 
 // pathID reads a numeric path segment, writing a 404 if it is not a number.
