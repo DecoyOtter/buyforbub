@@ -4,7 +4,8 @@
           aria-pressed="{{.Bought}}"
           aria-label="Mark {{.Name}} as {{if .Bought}}still needed{{else}}bought{{end}}"></button>
   <button class="item__open" type="button"
-          hx-get="/items/{{.ID}}" hx-target="#item-{{.ID}}" hx-swap="outerHTML"
+          hx-get="/items/{{.ID}}" hx-target="#workspace-content" hx-swap="innerHTML"
+          data-open-surface="#workspace"
           aria-label="Open {{.Name}}">
     <span class="item__name">{{.Name}}</span>
     {{if gt .Qty 1}}<span class="item__qty">&times;{{.Qty}}</span>{{end}}
@@ -17,7 +18,8 @@
     <div class="item__money"><strong>{{.BudgetText}}</strong><span>Budget</span></div>
   {{else}}
     <button class="item__set-budget" type="button"
-            hx-get="/items/{{.ID}}/edit" hx-target="#item-{{.ID}}" hx-swap="outerHTML"
+            hx-get="/items/{{.ID}}/edit" hx-target="#workspace-content" hx-swap="innerHTML"
+            data-open-surface="#workspace"
             aria-label="Set budget for {{.Name}}">Set budget</button>
   {{end}}
 </li>

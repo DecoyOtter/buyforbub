@@ -1,4 +1,4 @@
-{{define "detail"}}<li id="item-{{.Item.ID}}" class="item is-open{{if .Item.Bought}} is-bought{{end}}">
+{{define "detail"}}<div id="item-{{.Item.ID}}" class="item-workspace is-open{{if .Item.Bought}} is-bought{{end}}">
   <div class="detail">
     <div class="detail__head">
       <button class="item__check" type="button"
@@ -6,14 +6,19 @@
               aria-pressed="{{.Item.Bought}}"
               aria-label="Mark {{.Item.Name}} as {{if .Item.Bought}}still needed{{else}}bought{{end}}"></button>
       <div class="detail__title">
-        <span class="item__name">{{.Item.Name}}</span>
+        <h1 class="item-workspace__title">{{.Item.Name}}</h1>
         {{if gt .Item.Qty 1}}<span class="item__qty">&times;{{.Item.Qty}}</span>{{end}}
-        {{if .Item.Notes}}<span class="item__notes">{{.Item.Notes}}</span>{{end}}
+        <span class="item-workspace__status">{{if .Item.Bought}}Bought{{else}}Needed{{end}}</span>
       </div>
-      <button class="detail__close" type="button"
-              hx-get="/items/{{.Item.ID}}/row" hx-target="#item-{{.Item.ID}}" hx-swap="outerHTML"
-              aria-label="Close {{.Item.Name}}">&times;</button>
     </div>
+
+    <dl class="item-workspace__meta">
+      <div><dt>Category</dt><dd>{{.Item.Category}}</dd></div>
+      <div><dt>Qty</dt><dd>{{.Item.Qty}}</dd></div>
+      <div><dt>Status</dt><dd>{{if .Item.Bought}}Bought{{else}}Needed{{end}}</dd></div>
+      <div><dt>{{if .Item.Bought}}Actual spend{{else}}Budget{{end}}</dt><dd>{{if .Item.Bought}}{{if .ActualCents}}{{.ActualText}}{{else}}Unknown{{end}}{{else if .Item.BudgetCents}}{{.Item.BudgetText}}{{else}}No budget{{end}}</dd></div>
+    </dl>
+    {{if .Item.Notes}}<p class="item-workspace__notes">{{.Item.Notes}}</p>{{end}}
 
     {{if .Editing}}{{template "edit" .}}{{end}}
 
@@ -42,12 +47,12 @@
     {{if not .Editing}}
     <div class="detail__actions">
       <button class="btn btn--quiet" type="button"
-              hx-get="/items/{{.Item.ID}}/edit" hx-target="#item-{{.Item.ID}}" hx-swap="outerHTML">Edit item</button>
+              hx-get="/items/{{.Item.ID}}/edit" hx-target="#workspace-content" hx-swap="innerHTML">Edit item</button>
       <button class="btn btn--danger" type="button"
               hx-post="/items/{{.Item.ID}}/delete" hx-target="#list" hx-swap="outerHTML"
-              data-confirm="Delete {{.Item.Name}}?">Delete item</button>
+              data-close-on-success="true" data-confirm="Delete {{.Item.Name}}?">Delete item</button>
     </div>
     {{end}}
   </div>
-</li>
+</div>
 {{end}}

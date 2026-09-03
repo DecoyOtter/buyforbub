@@ -205,10 +205,28 @@ func (i itemData) ActualText() string {
 
 // detailData backs the expanded panel, and the edit form nested inside it.
 type detailData struct {
-	Item       store.Item
-	Options    []optionView
-	Categories []string
-	Editing    bool
+	Item        store.Item
+	ActualCents *int64
+	Options     []optionView
+	Categories  []string
+	Editing     bool
+	Edit        editItemData
+}
+
+type editItemData struct {
+	Name     string
+	Qty      string
+	Category string
+	Notes    string
+	Budget   string
+	Errors   map[string]string
+}
+
+func (d detailData) ActualText() string {
+	if d.ActualCents == nil {
+		return ""
+	}
+	return store.FormatMoney(*d.ActualCents)
 }
 
 // optionView is an option with its comments attached, since the store returns
@@ -360,13 +378,17 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	in, err := parseItemInput(r)
+	in, form, err := parseEditItemInput(r)
 	if err != nil {
-		s.fail(w, r, err)
+		s.renderEditError(w, r, id, form, err)
 		return
 	}
 	if _, err := s.store.Update(r.Context(), id, in); err != nil {
-		s.fail(w, r, err)
+		if len(editItemFieldErrors(err)) == 0 {
+			s.fail(w, r, err)
+			return
+		}
+		s.renderEditError(w, r, id, form, err)
 		return
 	}
 	// The category may have changed, so the whole list is re-rendered.
@@ -655,38 +677,56 @@ func newItemData(item store.Item, chosenPrices map[int64]*int64) itemData {
 }
 
 func (s *Server) renderDetail(w http.ResponseWriter, r *http.Request, id int64, editing bool) {
-	item, err := s.store.Get(r.Context(), id)
+	data, err := s.detailData(r.Context(), id, editing)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	opts, err := s.store.ListOptions(r.Context(), id)
+	s.render(w, r, http.StatusOK, "detail", data)
+}
+
+func (s *Server) detailData(ctx context.Context, id int64, editing bool) (detailData, error) {
+	item, err := s.store.Get(ctx, id)
 	if err != nil {
-		s.fail(w, r, err)
-		return
+		return detailData{}, err
 	}
-	comments, err := s.store.CommentsByOption(r.Context(), id)
+	opts, err := s.store.ListOptions(ctx, id)
 	if err != nil {
-		s.fail(w, r, err)
-		return
+		return detailData{}, err
+	}
+	comments, err := s.store.CommentsByOption(ctx, id)
+	if err != nil {
+		return detailData{}, err
 	}
 
-	bundleOptions, normalConfirms, err := s.bundleOptionData(r.Context())
+	bundleOptions, normalConfirms, err := s.bundleOptionData(ctx)
 	if err != nil {
-		s.fail(w, r, err)
-		return
+		return detailData{}, err
 	}
 	views := make([]optionView, 0, len(opts))
 	for _, o := range opts {
 		bundle := bundleOptions[o.ID]
 		views = append(views, optionView{Option: o, Comments: comments[o.ID], Bundle: bundle, ChooseConfirm: normalConfirms[o.ItemID]})
 	}
-	s.render(w, r, http.StatusOK, "detail", detailData{
-		Item:       item,
-		Options:    views,
-		Categories: store.Categories,
-		Editing:    editing,
-	})
+	prices, err := s.store.ChosenOptionPrices(ctx)
+	if err != nil {
+		return detailData{}, err
+	}
+	return detailData{
+		Item:        item,
+		ActualCents: prices[id],
+		Options:     views,
+		Categories:  store.Categories,
+		Editing:     editing,
+		Edit:        newEditItemData(item),
+	}, nil
+}
+
+func newEditItemData(item store.Item) editItemData {
+	return editItemData{
+		Name: item.Name, Qty: strconv.Itoa(item.Qty), Category: item.Category,
+		Notes: item.Notes, Budget: item.BudgetText(), Errors: map[string]string{},
+	}
 }
 
 func (s *Server) bundleOptionData(ctx context.Context) (map[int64]*bundleOptionData, map[int64]string, error) {
@@ -804,20 +844,58 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 	buf.WriteTo(w)
 }
 
-func parseItemInput(r *http.Request) (store.ItemInput, error) {
-	if err := r.ParseForm(); err != nil {
-		return store.ItemInput{}, fmt.Errorf("%w: malformed form", errBadRequest)
+func (s *Server) renderEditError(w http.ResponseWriter, r *http.Request, id int64, form editItemData, err error) {
+	if !isHTMX(r) {
+		s.fail(w, r, err)
+		return
 	}
-	// An absent or unparseable qty falls through as 0, which the store
-	// normalises to 1.
-	qty, _ := strconv.Atoi(r.PostFormValue("qty"))
+	data, dataErr := s.detailData(r.Context(), id, true)
+	if dataErr != nil {
+		s.fail(w, r, dataErr)
+		return
+	}
+	form.Errors = editItemFieldErrors(err)
+	data.Edit = form
+	w.Header().Set("HX-Retarget", "#workspace-content")
+	w.Header().Set("HX-Reswap", "innerHTML")
+	w.Header().Set("HX-Trigger", "item-invalid")
+	s.render(w, r, http.StatusOK, "detail", data)
+}
+
+func editItemFieldErrors(err error) map[string]string {
+	errorsByField := make(map[string]string)
+	switch {
+	case errors.Is(err, store.ErrInvalidName):
+		errorsByField["name"] = "Give the item a name."
+	case errors.Is(err, store.ErrInvalidCategory):
+		errorsByField["category"] = "Pick a category."
+	case errors.Is(err, errInvalidQty):
+		errorsByField["qty"] = "Qty must be a whole number greater than zero."
+	case errors.Is(err, store.ErrInvalidBudget):
+		errorsByField["budget"] = "Budget should be a number."
+	}
+	return errorsByField
+}
+
+func parseEditItemInput(r *http.Request) (store.ItemInput, editItemData, error) {
+	if err := r.ParseForm(); err != nil {
+		return store.ItemInput{}, editItemData{}, fmt.Errorf("%w: malformed form", errBadRequest)
+	}
+	qtyText := strings.TrimSpace(r.PostFormValue("qty"))
+	if qtyText == "" {
+		qtyText = "1"
+	}
+	qty, err := strconv.Atoi(qtyText)
+	form := editItemData{
+		Name: r.PostFormValue("name"), Qty: qtyText, Category: r.PostFormValue("category"),
+		Notes: r.PostFormValue("notes"), Budget: r.PostFormValue("budget"), Errors: map[string]string{},
+	}
+	if err != nil || qty < 1 {
+		return store.ItemInput{Name: form.Name, Category: form.Category, Notes: form.Notes, Budget: form.Budget}, form, errInvalidQty
+	}
 	return store.ItemInput{
-		Name:     r.PostFormValue("name"),
-		Qty:      qty,
-		Category: r.PostFormValue("category"),
-		Notes:    r.PostFormValue("notes"),
-		Budget:   r.PostFormValue("budget"),
-	}, nil
+		Name: form.Name, Qty: qty, Category: form.Category, Notes: form.Notes, Budget: form.Budget,
+	}, form, nil
 }
 
 var errInvalidQty = errors.New("invalid quantity")

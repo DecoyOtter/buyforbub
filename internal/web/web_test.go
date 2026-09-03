@@ -366,6 +366,113 @@ func TestDetailPanel(t *testing.T) {
 	assertNotContains(t, body, "is-open")
 }
 
+func TestItemWorkspaceAndOpenTarget(t *testing.T) {
+	s, st := newServer(t)
+	it, err := st.Add(context.Background(), store.ItemInput{
+		Name: "Cot", Category: "Nursery", Qty: 2, Notes: "Keep it snug", Budget: "$500",
+	})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	rec := do(t, s, http.MethodGet, "/", nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `hx-target="#workspace-content"`)
+	assertContains(t, rec.Body.String(), `data-open-surface="#workspace"`)
+
+	rec = do(t, s, http.MethodGet, "/items/"+itoa(it.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `id="item-`+itoa(it.ID)+`" class="item-workspace is-open"`)
+	assertContains(t, body, "Cot")
+	assertContains(t, body, "Nursery")
+	assertContains(t, body, "Qty")
+	assertContains(t, body, "2")
+	assertContains(t, body, "Needed")
+	assertContains(t, body, "Budget")
+	assertContains(t, body, "$500")
+	assertContains(t, body, "Edit item")
+	assertContains(t, body, "Delete item")
+	assertNotContains(t, body, "<!doctype html>")
+}
+
+func TestItemWorkspaceShowsActualSpend(t *testing.T) {
+	s, st := newServer(t)
+	it := mustAdd(t, st, "Cot", "Nursery")
+	op := mustAddOption(t, st, it.ID, store.OptionInput{URL: "https://shop.example/cot", Price: "$425"})
+	if _, err := st.ChooseOption(context.Background(), op.ID); err != nil {
+		t.Fatalf("ChooseOption: %v", err)
+	}
+
+	rec := do(t, s, http.MethodGet, "/items/"+itoa(it.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, "Bought")
+	assertContains(t, body, "Actual spend")
+	assertContains(t, body, "$425")
+}
+
+func TestEditItemWorkspaceValidationAndSave(t *testing.T) {
+	s, st := newServer(t)
+	it := mustAdd(t, st, "Cot", "Nursery")
+
+	rec := do(t, s, http.MethodGet, "/items/"+itoa(it.ID)+"/edit", nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `id="edit-item-form"`)
+	for _, field := range []string{`name="name"`, `name="category"`, `name="qty"`, `name="notes"`, `name="budget"`} {
+		assertContains(t, body, field)
+	}
+	assertContains(t, body, `data-close-on-success="true"`)
+
+	invalidEdits := []struct {
+		form url.Values
+		msg  string
+	}{
+		{url.Values{"name": {""}, "category": {"Nursery"}, "qty": {"1"}}, "Give the item a name."},
+		{url.Values{"name": {"Cot"}, "category": {"Nursery"}, "qty": {"many"}}, "Qty must be a whole number greater than zero."},
+		{url.Values{"name": {"Cot"}, "category": {"Nursery"}, "qty": {"1"}, "budget": {"bad"}}, "Budget should be a number."},
+	}
+	for _, invalid := range invalidEdits {
+		rec = doHTMX(t, s, http.MethodPost, "/items/"+itoa(it.ID), invalid.form)
+		assertStatus(t, rec, http.StatusOK)
+		assertContains(t, rec.Body.String(), `id="edit-item-form"`)
+		assertContains(t, rec.Body.String(), invalid.msg)
+	}
+	if got, err := st.Get(context.Background(), it.ID); err != nil || got.Name != "Cot" {
+		t.Fatalf("item after invalid edit = %#v, %v", got, err)
+	}
+
+	rec = do(t, s, http.MethodPost, "/items/"+itoa(it.ID), url.Values{
+		"name": {"Cot mattress"}, "category": {"Travel"}, "qty": {"3"}, "notes": {"firm"}, "budget": {"$1,200"},
+	})
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `id="list"`)
+	assertContains(t, rec.Body.String(), "Cot mattress")
+	assertNotContains(t, rec.Body.String(), `id="workspace"`)
+	updated, err := st.Get(context.Background(), it.ID)
+	if err != nil {
+		t.Fatalf("Get updated item: %v", err)
+	}
+	if updated.Name != "Cot mattress" || updated.Category != "Travel" || updated.Qty != 3 || updated.Notes != "firm" || updated.BudgetText() != "$1,200" {
+		t.Fatalf("updated item = %#v", updated)
+	}
+}
+
+func TestDeleteItemWorkspaceRefreshesList(t *testing.T) {
+	s, st := newServer(t)
+	it := mustAdd(t, st, "Cot", "Nursery")
+
+	rec := do(t, s, http.MethodGet, "/items/"+itoa(it.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `data-close-on-success="true"`)
+
+	rec = do(t, s, http.MethodPost, "/items/"+itoa(it.ID)+"/delete", nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `id="list"`)
+	assertNotContains(t, rec.Body.String(), "Cot")
+}
+
 func TestEditFormAndCancel(t *testing.T) {
 	s, st := newServer(t)
 	it := mustAdd(t, st, "Cot", "Nursery")

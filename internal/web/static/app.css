@@ -605,13 +605,43 @@ input[type="text"], input[type="number"], select {
 
 /* --- detail panel --- */
 
-.item.is-open {
-  display: block;
-  padding: 0;
-  background: var(--accent-weak);
+.item-workspace { padding: 0 0 28px; }
+
+.item-workspace__title {
+  margin: 0;
+  color: var(--text);
+  font: 700 2.15rem/1 "Fraunces", serif;
+  letter-spacing: -.045em;
 }
 
-.detail { padding: 4px 12px 14px; }
+.item-workspace__status {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.item-workspace__meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin: 4px 0 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--border);
+}
+
+.item-workspace__meta div { padding: 10px 12px; background: var(--surface); }
+.item-workspace__meta dt { color: var(--muted); font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.item-workspace__meta dd { margin: 2px 0 0; font-weight: 700; }
+.item-workspace__notes { margin: 12px 0 0; color: var(--muted); font-size: .9rem; }
+
+.detail { padding: 4px 0 14px; }
 
 .detail__head {
   display: flex;
@@ -867,6 +897,9 @@ input[type="text"], input[type="number"], select {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+
+.edit__field.has-error input,
+.edit__field.has-error select { border-color: var(--danger); }
 
 .edit__field--category,
 .edit__field--notes,

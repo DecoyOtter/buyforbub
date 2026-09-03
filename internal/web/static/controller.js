@@ -200,14 +200,26 @@
     const surface = target && target.closest && target.closest(".surface");
     if (!surface) return;
     const validation = event.detail && event.detail.xhr && event.detail.xhr.getResponseHeader("HX-Trigger") === "add-item-invalid";
+    const itemValidation = event.detail && event.detail.xhr && event.detail.xhr.getResponseHeader("HX-Trigger") === "item-invalid";
     if (validation && target.id === "add-item-sheet-content" && surface.dataset.surfaceInitial !== undefined) {
       target.querySelectorAll("form").forEach((form) => {
         form.dataset.surfaceInitial = surface.dataset.surfaceInitial;
       });
+    } else if (itemValidation && surface.dataset.surfaceInitial !== undefined) {
+      const form = target.querySelector("#edit-item-form");
+      if (form) form.dataset.surfaceInitial = surface.dataset.surfaceInitial;
+      else rememberForms(surface);
     } else {
       rememberForms(surface);
     }
+    if (!itemValidation && !validation) rememberSurfaceInitial(surface);
     focusSurface(surface);
+  });
+
+  document.addEventListener("htmx:beforeRequest", (event) => {
+    const source = event.detail && event.detail.elt;
+    const surface = source && source.closest && source.closest(".surface");
+    if (surface && source.matches("form")) surface.dataset.surfaceInitial = formSnapshot(source);
   });
 
   document.addEventListener("htmx:afterRequest", (event) => {
@@ -216,8 +228,10 @@
     if (!detail.successful || !source) return;
     const surface = source.closest && source.closest(".surface");
     const validation = detail.xhr && detail.xhr.getResponseHeader("HX-Trigger") === "add-item-invalid";
-    if (surface && !validation && (source.dataset.closeOnSuccess === "true" || surface.dataset.closeOnSuccess === "true")) {
-      closeSurface(surface, true);
+    const itemValidation = detail.xhr && detail.xhr.getResponseHeader("HX-Trigger") === "item-invalid";
+    const wantsClose = source.dataset.closeOnSuccess === "true" || (surface && surface.dataset.closeOnSuccess === "true");
+    if (!validation && !itemValidation && wantsClose) {
+      closeSurface(surface || state.surface, true);
     }
   });
 

@@ -1,30 +1,34 @@
-{{define "edit"}}<form class="edit" hx-post="/items/{{.Item.ID}}" hx-target="#list" hx-swap="outerHTML">
-  <label class="edit__field edit__field--name">
+{{define "edit"}}<form id="edit-item-form" class="edit surface-form" hx-post="/items/{{.Item.ID}}" hx-target="#list" hx-swap="outerHTML" data-close-on-success="true">
+  <label class="edit__field edit__field--name{{if index .Edit.Errors "name"}} has-error{{end}}">
     <span>Name</span>
-    <input type="text" name="name" value="{{.Item.Name}}" required autocomplete="off">
+    <input type="text" name="name" value="{{.Edit.Name}}" required autocomplete="off" data-surface-focus>
+    {{with index .Edit.Errors "name"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
   </label>
-  <label class="edit__field edit__field--qty">
+  <label class="edit__field edit__field--qty{{if index .Edit.Errors "qty"}} has-error{{end}}">
     <span>Qty</span>
-    <input type="number" name="qty" value="{{.Item.Qty}}" min="1" step="1">
+    <input type="number" name="qty" value="{{.Edit.Qty}}" min="1" step="1" required inputmode="numeric">
+    {{with index .Edit.Errors "qty"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
   </label>
-  <label class="edit__field edit__field--category">
+  <label class="edit__field edit__field--category{{if index .Edit.Errors "category"}} has-error{{end}}">
     <span>Category</span>
-    <select name="category">
-      {{range .Categories}}<option value="{{.}}"{{if eq . $.Item.Category}} selected{{end}}>{{.}}</option>{{end}}
+    <select name="category" required>
+      {{range .Categories}}<option value="{{.}}"{{if eq . $.Edit.Category}} selected{{end}}>{{.}}</option>{{end}}
     </select>
+    {{with index .Edit.Errors "category"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
   </label>
-  <label class="edit__field edit__field--notes">
+  <label class="edit__field edit__field--notes{{if index .Edit.Errors "notes"}} has-error{{end}}">
     <span>Notes</span>
-    <input type="text" name="notes" value="{{.Item.Notes}}" autocomplete="off">
+    <input type="text" name="notes" value="{{.Edit.Notes}}" autocomplete="off">
+    {{with index .Edit.Errors "notes"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
   </label>
-  <label class="edit__field edit__field--budget">
+  <label class="edit__field edit__field--budget{{if index .Edit.Errors "budget"}} has-error{{end}}">
     <span>Budget</span>
-    <input type="text" name="budget" value="{{.Item.BudgetText}}" placeholder="Optional" inputmode="decimal" autocomplete="off">
+    <input type="text" name="budget" value="{{.Edit.Budget}}" placeholder="Optional" inputmode="decimal" autocomplete="off">
+    {{with index .Edit.Errors "budget"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
   </label>
   <div class="edit__actions">
     <button class="btn btn--primary" type="submit">Save</button>
-    <button class="btn" type="button"
-            hx-get="/items/{{.Item.ID}}" hx-target="#item-{{.Item.ID}}" hx-swap="outerHTML">Cancel</button>
+    <button class="btn" type="button" data-close-surface>Cancel</button>
   </div>
 </form>
 {{end}}
