@@ -34,6 +34,17 @@ func TestTemplatesReferenceRealAssets(t *testing.T) {
 	}
 }
 
+func TestPrototypeRouteIsRetired(t *testing.T) {
+	s, _ := newServer(t)
+
+	rec := do(t, s, http.MethodGet, "/prototype/design", nil)
+	assertStatus(t, rec, http.StatusNotFound)
+
+	page := do(t, s, http.MethodGet, "/", nil).Body.String()
+	assertNotContains(t, page, "prototype")
+	assertNotContains(t, page, "variant switcher")
+}
+
 func TestManifestIsValid(t *testing.T) {
 	s, _ := newServer(t)
 
