@@ -48,6 +48,22 @@ func do(t *testing.T, s *Server, method, path string, form url.Values) *httptest
 	return rec
 }
 
+func doHTMX(t *testing.T, s *Server, method, path string, form url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var req *http.Request
+	if form == nil {
+		req = httptest.NewRequest(method, path, nil)
+	} else {
+		req = httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	req.Header.Set("HX-Request", "true")
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	return rec
+}
+
 func mustAdd(t *testing.T, st *store.Store, name, category string) store.Item {
 	t.Helper()
 	it, err := st.Add(context.Background(), store.ItemInput{Name: name, Category: category})
@@ -197,6 +213,77 @@ func TestAddReturnsListFragment(t *testing.T) {
 	body := rec.Body.String()
 	assertContains(t, body, `id="list"`)
 	assertNotContains(t, body, "<!doctype html>")
+}
+
+func TestAddItemSheet(t *testing.T) {
+	s, _ := newServer(t)
+
+	rec := do(t, s, http.MethodGet, "/", nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `data-open-surface="#add-item-sheet"`)
+	assertContains(t, body, `id="add-item-form"`)
+	assertContains(t, body, `name="name"`)
+	assertContains(t, body, `name="category"`)
+	assertContains(t, body, `name="qty"`)
+	start := strings.Index(body, `id="add-item-form"`)
+	if start < 0 {
+		t.Fatal("add item form missing")
+	}
+	end := strings.Index(body[start:], "</form>")
+	if end < 0 {
+		t.Fatal("add item form has no closing tag")
+	}
+	form := body[start : start+end]
+	assertNotContains(t, form, `name="notes"`)
+	assertNotContains(t, form, `name="budget"`)
+	assertNotContains(t, form, `name="url"`)
+}
+
+func TestAddItemInvalidHTMXRendersFieldErrorWithoutSaving(t *testing.T) {
+	tests := []struct {
+		name      string
+		form      url.Values
+		field     string
+		wantError string
+	}{
+		{name: "name", form: url.Values{"name": {"  "}, "category": {"Nursery"}, "qty": {"1"}}, field: "name", wantError: "Give the item a name."},
+		{name: "category", form: url.Values{"name": {"Pram"}, "category": {"Vehicles"}, "qty": {"1"}}, field: "category", wantError: "Pick a category."},
+		{name: "qty", form: url.Values{"name": {"Pram"}, "category": {"Travel"}, "qty": {"many"}}, field: "qty", wantError: "Qty must be a whole number greater than zero."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, st := newServer(t)
+			rec := doHTMX(t, s, http.MethodPost, "/items", tt.form)
+			assertStatus(t, rec, http.StatusOK)
+			body := rec.Body.String()
+			assertContains(t, body, `id="add-item-form"`)
+			assertContains(t, body, `class="field-error" role="alert">`+tt.wantError+"</span>")
+			assertContains(t, body, `class="surface-form__field has-error"`)
+			items, err := st.List(context.Background())
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if len(items) != 0 {
+				t.Fatalf("stored %d items after invalid add, want 0", len(items))
+			}
+		})
+	}
+}
+
+func TestAddItemHTMXSuccessReturnsListForSheetClose(t *testing.T) {
+	s, st := newServer(t)
+
+	rec := doHTMX(t, s, http.MethodPost, "/items", url.Values{
+		"name": {"Pram"}, "category": {"Travel"}, "qty": {"2"},
+	})
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `id="list"`)
+	assertContains(t, rec.Body.String(), "Pram")
+	if _, err := st.Get(context.Background(), 1); err != nil {
+		t.Fatalf("Get added item: %v", err)
+	}
 }
 
 func TestToggleSinksBoughtItemsWithinGroup(t *testing.T) {

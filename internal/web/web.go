@@ -88,7 +88,16 @@ func (s *Server) routes() {
 type pageData struct {
 	Title      string
 	Categories []string
+	AddItem    addItemData
 	List       listData
+}
+
+type addItemData struct {
+	Name       string
+	Category   string
+	Qty        string
+	Categories []string
+	Errors     map[string]string
 }
 
 type listData struct {
@@ -242,18 +251,19 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "page", pageData{
 		Title:      s.title,
 		Categories: store.Categories,
+		AddItem:    newAddItemData("", "", "1", nil),
 		List:       list,
 	})
 }
 
 func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
-	in, err := parseItemInput(r)
+	in, form, err := parseAddItemInput(r)
 	if err != nil {
-		s.fail(w, r, err)
+		s.renderAddError(w, r, form, err)
 		return
 	}
 	if _, err := s.store.Add(r.Context(), in); err != nil {
-		s.fail(w, r, err)
+		s.renderAddError(w, r, form, err)
 		return
 	}
 	s.renderList(w, r)
@@ -810,6 +820,58 @@ func parseItemInput(r *http.Request) (store.ItemInput, error) {
 	}, nil
 }
 
+var errInvalidQty = errors.New("invalid quantity")
+
+func parseAddItemInput(r *http.Request) (store.ItemInput, addItemData, error) {
+	if err := r.ParseForm(); err != nil {
+		return store.ItemInput{}, newAddItemData("", "", "", nil), fmt.Errorf("%w: malformed form", errBadRequest)
+	}
+	qtyText := strings.TrimSpace(r.PostFormValue("qty"))
+	if qtyText == "" {
+		qtyText = "1"
+	}
+	qty, err := strconv.Atoi(qtyText)
+	if err != nil || qty < 1 {
+		return store.ItemInput{Name: r.PostFormValue("name"), Category: r.PostFormValue("category")}, newAddItemData(r.PostFormValue("name"), r.PostFormValue("category"), qtyText, nil), errInvalidQty
+	}
+	return store.ItemInput{
+		Name:     r.PostFormValue("name"),
+		Qty:      qty,
+		Category: r.PostFormValue("category"),
+	}, newAddItemData(r.PostFormValue("name"), r.PostFormValue("category"), qtyText, nil), nil
+}
+
+func newAddItemData(name, category, qty string, fieldErrors map[string]string) addItemData {
+	return addItemData{Name: name, Category: category, Qty: qty, Categories: store.Categories, Errors: fieldErrors}
+}
+
+func (s *Server) renderAddError(w http.ResponseWriter, r *http.Request, form addItemData, err error) {
+	if !isHTMX(r) {
+		s.fail(w, r, err)
+		return
+	}
+	form.Errors = addItemFieldErrors(err)
+	w.Header().Set("HX-Retarget", "#add-item-sheet-content")
+	w.Header().Set("HX-Reswap", "innerHTML")
+	w.Header().Set("HX-Trigger", "add-item-invalid")
+	s.render(w, r, http.StatusOK, "add-item", form)
+}
+
+func addItemFieldErrors(err error) map[string]string {
+	errorsByField := make(map[string]string)
+	switch {
+	case errors.Is(err, store.ErrInvalidName):
+		errorsByField["name"] = "Give the item a name."
+	case errors.Is(err, store.ErrInvalidCategory):
+		errorsByField["category"] = "Pick a category."
+	case errors.Is(err, errInvalidQty):
+		errorsByField["qty"] = "Qty must be a whole number greater than zero."
+	}
+	return errorsByField
+}
+
+func isHTMX(r *http.Request) bool { return r.Header.Get("HX-Request") == "true" }
+
 func parseBundleInput(r *http.Request) (store.BundleInput, error) {
 	if err := r.ParseForm(); err != nil {
 		return store.BundleInput{}, fmt.Errorf("%w: malformed form", errBadRequest)
@@ -856,6 +918,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "Give the item a name.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidCategory):
 		http.Error(w, "Pick a category.", http.StatusBadRequest)
+	case errors.Is(err, errInvalidQty):
+		http.Error(w, "Qty must be a whole number greater than zero.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidStatus):
 		http.Error(w, "Unknown status.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidBudget):

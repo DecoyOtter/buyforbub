@@ -294,6 +294,16 @@ body {
 
 /* --- add form --- */
 
+.add-item-trigger { display: block; margin: 0 auto 26px; }
+
+.surface-form { display: grid; gap: 18px; }
+.surface-form__field { display: grid; gap: 6px; }
+.surface-form__field > span:first-child { color: var(--muted); font-size: .78rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.surface-form__field input, .surface-form__field select { width: 100%; }
+.surface-form__field.has-error input, .surface-form__field.has-error select { border-color: var(--danger); }
+.field-error { color: var(--danger); font-size: .8rem; }
+.surface-form__actions { display: flex; justify-content: flex-end; padding-top: 4px; }
+
 .add {
   display: grid;
   grid-template-columns: 1fr auto auto;

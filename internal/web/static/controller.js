@@ -25,6 +25,11 @@
     });
   }
 
+  function rememberSurfaceInitial(surface) {
+    const form = surface && surface.querySelector("form");
+    if (form) surface.dataset.surfaceInitial = formSnapshot(form);
+  }
+
   function isDirty(surface) {
     return [...surface.querySelectorAll("form")].some((form) =>
       form.dataset.surfaceInitial !== undefined && form.dataset.surfaceInitial !== formSnapshot(form),
@@ -71,6 +76,7 @@
     setBackdropVisible(true);
     document.body.classList.add("has-surface-open");
     setSurfaceVisible(surface, true);
+    if (surface.id === "add-item-sheet") rememberSurfaceInitial(surface);
     rememberForms(surface);
     focusSurface(surface);
   }
@@ -193,7 +199,14 @@
     const target = event.detail && event.detail.target;
     const surface = target && target.closest && target.closest(".surface");
     if (!surface) return;
-    rememberForms(surface);
+    const validation = event.detail && event.detail.xhr && event.detail.xhr.getResponseHeader("HX-Trigger") === "add-item-invalid";
+    if (validation && target.id === "add-item-sheet-content" && surface.dataset.surfaceInitial !== undefined) {
+      target.querySelectorAll("form").forEach((form) => {
+        form.dataset.surfaceInitial = surface.dataset.surfaceInitial;
+      });
+    } else {
+      rememberForms(surface);
+    }
     focusSurface(surface);
   });
 
@@ -202,7 +215,8 @@
     const source = detail.elt;
     if (!detail.successful || !source) return;
     const surface = source.closest && source.closest(".surface");
-    if (surface && (source.dataset.closeOnSuccess === "true" || surface.dataset.closeOnSuccess === "true")) {
+    const validation = detail.xhr && detail.xhr.getResponseHeader("HX-Trigger") === "add-item-invalid";
+    if (surface && !validation && (source.dataset.closeOnSuccess === "true" || surface.dataset.closeOnSuccess === "true")) {
       closeSurface(surface, true);
     }
   });

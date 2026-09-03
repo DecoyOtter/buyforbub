@@ -11,16 +11,7 @@
     </div>
   </section>
 
-  <form class="add" hx-post="/items" hx-target="#list" hx-swap="outerHTML"
-        hx-on::after-request="if (event.detail.successful) { this.reset(); this.querySelector('input[name=name]').focus(); }">
-    <input class="add__name" type="text" name="name" placeholder="Add an item" required
-           autocomplete="off" aria-label="Item name">
-    <select class="add__category" name="category" aria-label="Category">
-      {{range .Categories}}<option value="{{.}}">{{.}}</option>{{end}}
-    </select>
-    <input class="add__qty" type="number" name="qty" value="1" min="1" step="1" aria-label="Quantity">
-    <button class="add__submit" type="submit">Add</button>
-  </form>
+  <button class="add-item-trigger btn btn--primary" type="button" data-open-surface="#add-item-sheet">Add Item</button>
 
   <section class="budget-total" aria-label="Whole list budget">
     <div class="budget-total__actual" aria-label="Actual spend"><span>Actual</span><strong>{{.Overall.ActualText}}</strong></div>

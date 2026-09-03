@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{.Title}}</title>
-<meta name="theme-color" content="#273047">
+<meta name="theme-color" content="#fff8eb">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/icon-180.png">
@@ -34,7 +34,7 @@
     </div>
     <button class="surface__close" type="button" data-close-surface aria-label="Close Add Item">&times;</button>
   </div>
-  <div id="add-item-sheet-content" class="surface__content"></div>
+  <div id="add-item-sheet-content" class="surface__content">{{template "add-item" .AddItem}}</div>
 </aside>
 
 <aside id="workspace" class="surface surface--workspace" aria-labelledby="workspace-title"
