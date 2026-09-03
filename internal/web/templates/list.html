@@ -1,4 +1,36 @@
 {{define "list"}}<div id="list" class="list">
+  <section class="dashboard" aria-label="Shopping progress">
+    <div class="dashboard__copy">
+      <p class="eyebrow">The little things, together</p>
+      <h1>{{.Done}} of {{.Total}}<br>in the bag.</h1>
+      <p>Every nappy, cuddle and sleepy car ride begins here.</p>
+    </div>
+    <div class="dashboard__meter" aria-label="{{.Done}} Done of {{.Total}} Total">
+      <span>{{.Done}}<small>/ {{.Total}}</small></span>
+      {{if .Total}}<progress value="{{.Done}}" max="{{.Total}}"></progress>{{end}}
+    </div>
+  </section>
+
+  <form class="add" hx-post="/items" hx-target="#list" hx-swap="outerHTML"
+        hx-on::after-request="if (event.detail.successful) { this.reset(); this.querySelector('input[name=name]').focus(); }">
+    <input class="add__name" type="text" name="name" placeholder="Add an item" required
+           autocomplete="off" aria-label="Item name">
+    <select class="add__category" name="category" aria-label="Category">
+      {{range .Categories}}<option value="{{.}}">{{.}}</option>{{end}}
+    </select>
+    <input class="add__qty" type="number" name="qty" value="1" min="1" step="1" aria-label="Quantity">
+    <button class="add__submit" type="submit">Add</button>
+  </form>
+
+  <section class="budget-total" aria-label="Whole list budget">
+    <div class="budget-total__actual" aria-label="Actual spend"><span>Actual</span><strong>{{.Overall.ActualText}}</strong></div>
+    <div><span>Still planned</span><strong>{{.Overall.StillPlannedText}}</strong></div>
+    <div><span>Expected total</span><strong>{{.Overall.ExpectedTotalText}}</strong></div>
+    {{if or .Overall.UnbudgetedNeeded .Overall.UnknownActual}}<p class="budget-total__counts">
+      {{if .Overall.UnbudgetedNeeded}}{{if eq .Overall.UnbudgetedNeeded 1}}1 item needs a budget{{else}}{{.Overall.UnbudgetedNeeded}} items need budgets{{end}}{{end}}{{if and .Overall.UnbudgetedNeeded .Overall.UnknownActual}} &middot; {{end}}{{if .Overall.UnknownActual}}{{if eq .Overall.UnknownActual 1}}1 bought item has an unknown actual{{else}}{{.Overall.UnknownActual}} bought items have unknown actuals{{end}}{{end}}
+    </p>{{end}}
+  </section>
+
   <aside class="bundle-rail" aria-label="Bundles">
     <div class="bundle-rail__head"><h2>Bundles</h2><span>{{len .Bundles}}</span></div>
     <details class="bundle-create">
@@ -74,23 +106,15 @@
       </details>{{end}}
     </div>
   </aside>
-  <div class="checklist">
+  <section class="checklist" aria-label="Shopping list by Category">
   <section class="progress">
-    <p class="progress__text" aria-live="polite">{{.Done}} of {{.Total}} done</p>
+    <p class="progress__text" aria-live="polite" aria-label="{{.Done}} of {{.Total}} done"><strong>{{.Done}}</strong> Done <span>/</span> <strong>{{.Total}}</strong> Total</p>
     {{if .Total}}<progress class="progress__bar" value="{{.Done}}" max="{{.Total}}"></progress>{{end}}
   </section>
 
-  {{if .Total}}<section class="budget-total" aria-label="Whole list budget">
-    <div><span>Actual</span><strong>{{.Overall.ActualText}}</strong></div>
-    <div><span>Still planned</span><strong>{{.Overall.StillPlannedText}}</strong></div>
-    <div><span>Expected total</span><strong>{{.Overall.ExpectedTotalText}}</strong></div>
-    {{if or .Overall.UnbudgetedNeeded .Overall.UnknownActual}}<p class="budget-total__counts">
-      {{if .Overall.UnbudgetedNeeded}}{{if eq .Overall.UnbudgetedNeeded 1}}1 item needs a budget{{else}}{{.Overall.UnbudgetedNeeded}} items need budgets{{end}}{{end}}{{if and .Overall.UnbudgetedNeeded .Overall.UnknownActual}} &middot; {{end}}{{if .Overall.UnknownActual}}{{if eq .Overall.UnknownActual 1}}1 bought item has an unknown actual{{else}}{{.Overall.UnknownActual}} bought items have unknown actuals{{end}}{{end}}
-    </p>{{end}}
-  </section>{{end}}
-
   {{range .Groups}}
-  <section class="group">
+  <section class="group trail-stop">
+    <div class="trail-stop__pin" aria-hidden="true"><span></span></div>
     <div class="group__head">
       <h2 class="group__title">{{.Category}}</h2>
       <p><strong>{{.Summary.ActualText}} actual</strong><span>{{.Summary.StillPlannedText}} planned</span></p>
@@ -104,6 +128,6 @@
   {{else}}
   <p class="empty">Nothing on the list yet. Add the first thing above.</p>
   {{end}}
-  </div>
+  </section>
 </div>
 {{end}}

@@ -1,4 +1,4 @@
-{{define "row"}}<li id="item-{{.ID}}" class="item{{if .Bought}} is-bought{{end}}">
+{{define "row"}}<li id="item-{{.ID}}" class="item trail-item{{if .Bought}} is-bought{{end}}">
   <button class="item__check" type="button"
           hx-post="/items/{{.ID}}/toggle" hx-target="#list" hx-swap="outerHTML"
           aria-pressed="{{.Bought}}"

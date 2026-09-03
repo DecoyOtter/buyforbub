@@ -220,6 +220,41 @@ func TestToggleSinksBoughtItemsWithinGroup(t *testing.T) {
 	assertOrder(t, rec.Body.String(), "Cot", "Sheets", "Monitor")
 }
 
+func TestDashboardShoppingTrail(t *testing.T) {
+	s, st := newServer(t)
+	bought := mustAddBudgetItem(t, st, store.ItemInput{Name: "Cot", Category: "Nursery", Budget: "$120"})
+	needed := mustAddBudgetItem(t, st, store.ItemInput{Name: "Sheets", Category: "Nursery", Budget: "$25"})
+	mustAdd(t, st, "Pram", "Travel")
+	option, err := st.AddOption(context.Background(), bought.ID, store.OptionInput{URL: "https://shop.example/cot", Price: "$75"})
+	if err != nil {
+		t.Fatalf("AddOption: %v", err)
+	}
+	if _, err := st.ChooseOption(context.Background(), option.ID); err != nil {
+		t.Fatalf("ChooseOption: %v", err)
+	}
+
+	rec := do(t, s, http.MethodGet, "/", nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `class="dashboard"`)
+	assertContains(t, body, "1 of 3")
+	assertContains(t, body, `aria-label="1 Done of 3 Total"`)
+	assertContains(t, body, `aria-label="Actual spend"`)
+	assertContains(t, body, `<span>Actual</span><strong>$75</strong>`)
+	assertContains(t, body, `<span>Still planned</span><strong>$25</strong>`)
+	assertContains(t, body, `<span>Expected total</span><strong>$100</strong>`)
+	assertContains(t, body, "1 item needs a budget")
+	assertContains(t, body, `class="group trail-stop"`)
+	assertContains(t, body, `class="item trail-item is-bought"`)
+	assertOrder(t, body, "Sheets", "Cot")
+	assertOrder(t, body, "Nursery", "Travel")
+
+	rec = do(t, s, http.MethodPost, "/items/"+itoa(needed.ID)+"/toggle", nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `id="list"`)
+	assertContains(t, rec.Body.String(), `aria-label="2 of 3 done"`)
+}
+
 func TestDetailPanel(t *testing.T) {
 	s, st := newServer(t)
 	it := mustAdd(t, st, "Cot", "Nursery")

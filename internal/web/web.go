@@ -92,6 +92,7 @@ type pageData struct {
 }
 
 type listData struct {
+	Categories  []string
 	Groups      []groupData
 	Bundles     []bundleData
 	BundleItems []bundleItemGroupData
@@ -604,7 +605,7 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 		data = append(data, view)
 	}
 	bundleItemGroups := bundleItemsForGroups(groups, chosenOptionNames, nil)
-	return listData{Groups: data, Bundles: bundleViews, BundleItems: bundleItemGroups, Overall: summaries.Overall, Done: done, Total: total}, nil
+	return listData{Categories: store.Categories, Groups: data, Bundles: bundleViews, BundleItems: bundleItemGroups, Overall: summaries.Overall, Done: done, Total: total}, nil
 }
 
 func bundleItemsForGroups(groups []store.CategoryGroup, chosen map[int64]string, members map[int64]store.BundleMemberInput) []bundleItemGroupData {
