@@ -40,14 +40,21 @@
   </section>
 
   <div class="bundle-workspace__actions">
+    {{if not .Bundle.Chosen}}<button class="btn btn--primary" type="button"
+            hx-post="/bundles/{{.Bundle.ID}}/choose" hx-target="#list" hx-swap="outerHTML"
+            data-close-on-success="true" data-confirm="{{.Bundle.ChooseConfirm}}">Choose Bundle</button>{{end}}
     <button class="btn btn--quiet" type="button" hx-get="/bundles/{{.Bundle.ID}}/edit"
             hx-target="#workspace-content" hx-swap="innerHTML">Edit Bundle</button>
+    <button class="btn btn--danger" type="button"
+            hx-post="/bundles/{{.Bundle.ID}}/delete" hx-target="#list" hx-swap="outerHTML"
+            data-close-on-success="true"
+            data-confirm="Delete {{.Bundle.Name}}? This removes the Bundle Options and their Option Comments for {{.Bundle.AffectedItems}}.">Delete Bundle</button>
   </div>
 </article>
 {{end}}{{end}}
 
 {{define "bundle-form"}}
-<form id="bundle-form" class="bundle-form" data-bundle-form hx-post="{{.Action}}"
+<form id="bundle-form" class="bundle-form" data-bundle-form hx-post="{{.Action}}"{{if .EditConfirm}} data-confirm="{{.EditConfirm}}"{{end}}
       hx-target="#workspace-content" hx-swap="innerHTML">
   <div class="bundle-form__heading">
     <p class="surface__eyebrow">{{if .Editing}}Keep the details current{{else}}A shared store package{{end}}</p>

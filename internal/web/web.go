@@ -142,6 +142,7 @@ type bundleWorkspaceData struct {
 type bundleFormData struct {
 	ID           int64
 	Editing      bool
+	EditConfirm  string
 	Name         string
 	URL          string
 	Price        string
@@ -293,6 +294,7 @@ type optionView struct {
 type bundleOptionData struct {
 	BundleID       int64
 	BundleName     string
+	AffectedItems  string
 	ItemID         int64
 	ComponentLabel string
 	ItemName       string
@@ -902,7 +904,7 @@ func bundleFormForBundle(list listData, bundle bundleData) bundleFormData {
 		members[member.ItemID] = store.BundleMemberInput{ItemID: member.ItemID, ComponentLabel: member.ComponentLabel}
 	}
 	return bundleFormData{
-		ID: bundle.ID, Editing: true, Name: bundle.Name, URL: bundle.URL,
+		ID: bundle.ID, Editing: true, EditConfirm: bundleEditConfirm(bundle), Name: bundle.Name, URL: bundle.URL,
 		Price: bundle.PriceInput(), RegularPrice: bundle.RegularPriceInput(),
 		Items:    bundleItemsForGroups(groupsFromList(list), nil, members),
 		Selected: len(members), Errors: map[string]string{},
@@ -926,12 +928,26 @@ func bundleFormForInput(list listData, id int64, editing bool, in store.BundleIn
 	for _, member := range in.Members {
 		members[member.ItemID] = member
 	}
-	return bundleFormData{
+	form := bundleFormData{
 		ID: id, Editing: editing, Name: in.Name, URL: in.URL, Price: in.Price,
 		RegularPrice: in.RegularPrice,
 		Items:        bundleItemsForGroups(groupsFromList(list), nil, members),
 		Selected:     len(members), Errors: bundleFieldErrors(err, in),
 	}
+	for _, bundle := range list.Bundles {
+		if bundle.ID == id {
+			form.EditConfirm = bundleEditConfirm(bundle)
+			break
+		}
+	}
+	return form
+}
+
+func bundleEditConfirm(bundle bundleData) string {
+	if !bundle.Chosen {
+		return ""
+	}
+	return "Saving will unchoose this Bundle and mark " + bundle.AffectedItems + " needed. Continue?"
 }
 
 func (s *Server) renderBundleError(w http.ResponseWriter, r *http.Request, id int64, parsed bundleFormData, in store.BundleInput, err error) {
@@ -1033,6 +1049,10 @@ func (s *Server) bundleOptionData(ctx context.Context) (map[int64]*bundleOptionD
 			return nil, nil, err
 		}
 		confirm := bundleChooseConfirm(bundle, bundles, itemsByID, s.store, ctx)
+		affectedNames := make([]string, 0, len(bundle.Members))
+		for _, member := range bundle.Members {
+			affectedNames = append(affectedNames, itemsByID[member.ItemID].Name)
+		}
 		chosen := false
 		for _, member := range bundle.Members {
 			option, err := s.store.GetOption(ctx, member.OptionID)
@@ -1044,7 +1064,7 @@ func (s *Server) bundleOptionData(ctx context.Context) (map[int64]*bundleOptionD
 			if option.PriceCents == nil {
 				return nil, nil, fmt.Errorf("bundle %d has incomplete member", bundle.ID)
 			}
-			result[option.ID] = &bundleOptionData{BundleID: bundle.ID, BundleName: bundle.Name, ItemID: member.ItemID, ComponentLabel: member.ComponentLabel, ItemName: item.Name, PriceCents: *option.PriceCents, BundlePrice: bundle.PriceCents, ChooseConfirm: confirm, Comments: comments}
+			result[option.ID] = &bundleOptionData{BundleID: bundle.ID, BundleName: bundle.Name, AffectedItems: joinNames(affectedNames), ItemID: member.ItemID, ComponentLabel: member.ComponentLabel, ItemName: item.Name, PriceCents: *option.PriceCents, BundlePrice: bundle.PriceCents, ChooseConfirm: confirm, Comments: comments}
 		}
 		if chosen {
 			affected := make([]string, 0, len(bundle.Members))

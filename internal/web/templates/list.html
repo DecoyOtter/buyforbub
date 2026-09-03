@@ -37,6 +37,9 @@
           {{if .RegularPriceCents}}<span class="bundle-card__saving">Save {{.SavingsText}} ({{.SavingsPercent}}%)</span>{{end}}
           {{if .Chosen}}<span class="bundle-card__status">Chosen</span>{{end}}
         </button>
+        {{if not .Chosen}}<button class="bundle-card__choose" type="button"
+                hx-post="/bundles/{{.ID}}/choose" hx-target="#list" hx-swap="outerHTML"
+                data-close-on-success="true" data-confirm="{{.ChooseConfirm}}">Choose</button>{{end}}
       </article>{{end}}
     </div>
   </aside>

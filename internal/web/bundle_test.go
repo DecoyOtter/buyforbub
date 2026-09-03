@@ -220,6 +220,10 @@ func TestUpdateBundle(t *testing.T) {
 		t.Fatalf("ChooseBundle: %v", err)
 	}
 
+	editRec := do(t, s, http.MethodGet, "/bundles/"+itoa(bundle.ID)+"/edit", nil)
+	assertStatus(t, editRec, http.StatusOK)
+	assertContains(t, editRec.Body.String(), `data-confirm="Saving will unchoose this Bundle and mark Cot and Pram needed. Continue?"`)
+
 	rec := do(t, s, http.MethodGet, "/", nil)
 	assertStatus(t, rec, http.StatusOK)
 	body := rec.Body.String()
@@ -311,6 +315,14 @@ func TestBundleWorkspaceRendersWithoutChangingData(t *testing.T) {
 	assertContains(t, body, "Save $50 (33%)")
 	assertContains(t, body, `href="https://shop.example/sleep"`)
 	assertNotContains(t, body, `id="list"`)
+	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`/choose"`)
+	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`/delete"`)
+	assertContains(t, body, `data-close-on-success="true"`)
+	assertContains(t, body, "Option Comments for Cot and Pram.")
+
+	rec = do(t, s, http.MethodGet, "/bundles/"+itoa(bundle.ID)+"/edit", nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertNotContains(t, rec.Body.String(), `data-confirm=`)
 
 	got, err := st.GetBundle(context.Background(), bundle.ID)
 	if err != nil || got.Name != bundle.Name || len(got.Members) != 2 {

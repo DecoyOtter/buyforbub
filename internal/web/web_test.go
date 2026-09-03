@@ -136,10 +136,11 @@ func TestBundleRailRendersOrderedCards(t *testing.T) {
 	if _, err := st.ChooseBundle(context.Background(), first.ID); err != nil {
 		t.Fatalf("ChooseBundle: %v", err)
 	}
-	if _, err := st.AddBundle(context.Background(), store.BundleInput{
+	second, err := st.AddBundle(context.Background(), store.BundleInput{
 		Name: "Travel bundle", URL: "https://shop.example/travel", Price: "99.99",
 		Members: []store.BundleMemberInput{{ItemID: pram.ID}, {ItemID: seat.ID}},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("AddBundle second: %v", err)
 	}
 
@@ -152,6 +153,8 @@ func TestBundleRailRendersOrderedCards(t *testing.T) {
 	assertContains(t, body, "Save $50 (33%)")
 	assertContains(t, body, "Chosen")
 	assertContains(t, body, `hx-get="/bundles/`+itoa(first.ID)+`"`)
+	assertContains(t, body, `hx-post="/bundles/`+itoa(second.ID)+`/choose"`)
+	assertContains(t, body, `data-confirm="Choose Travel bundle for Pram and Car seat.`)
 	assertContains(t, body, `data-open-surface="#workspace"`)
 	assertNotContains(t, body, `class="bundle-card__body"`)
 	assertOrder(t, body, "Sleep bundle", "Travel bundle")

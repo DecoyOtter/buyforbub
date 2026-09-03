@@ -264,6 +264,7 @@ body {
 
 .bundle-card.is-chosen { border-color: var(--accent); }
 .bundle-card__open { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; width: 100%; min-height: 112px; padding: 14px; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
+.bundle-card__choose { min-height: var(--tap); margin: 0 14px 14px; padding: 0 12px; border: 1px solid var(--accent); border-radius: 999px; background: none; color: var(--accent); font-size: .82rem; font-weight: 700; cursor: pointer; }
 .bundle-card__name { min-width: 0; font-size: .95rem; font-weight: 800; overflow-wrap: anywhere; }
 .bundle-card__price { color: var(--accent); font-size: .9rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .bundle-card__meta { color: var(--muted); font-size: .75rem; }
@@ -292,7 +293,7 @@ body {
 .bundle-workspace__members li > strong { flex: none; color: var(--accent); font-variant-numeric: tabular-nums; }
 .bundle-workspace__members small { display: block; color: var(--muted); font-size: .75rem; }
 .bundle-workspace__comments { margin-top: 26px; }
-.bundle-workspace__actions { display: flex; justify-content: flex-end; margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--border); }
+.bundle-workspace__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--border); }
 
 .bundle-form { display: grid; gap: 24px; padding-bottom: 28px; }
 .bundle-form__heading h1 { margin: 0; font: 700 2.35rem/1 "Fraunces", serif; letter-spacing: -.045em; }
