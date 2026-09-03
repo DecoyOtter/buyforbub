@@ -5,12 +5,12 @@
   <span class="option__badge">Bought this</span>
   {{else}}
   <button class="option__choose" type="button"
-          hx-post="{{if .Bundle}}/bundles/{{.Bundle.BundleID}}/choose{{else}}/options/{{.ID}}/choose{{end}}" hx-target="#list" hx-swap="outerHTML"{{if .Bundle}} hx-confirm="{{.Bundle.ChooseConfirm}}"{{else if .ChooseConfirm}} hx-confirm="{{.ChooseConfirm}}"{{end}}
+          hx-post="{{if .Bundle}}/bundles/{{.Bundle.BundleID}}/choose{{else}}/options/{{.ID}}/choose{{end}}" hx-target="#list" hx-swap="outerHTML"{{if .Bundle}} data-confirm="{{.Bundle.ChooseConfirm}}"{{else if .ChooseConfirm}} data-confirm="{{.ChooseConfirm}}"{{end}}
           aria-label="Mark {{.Title}} as the one bought">Choose</button>
   {{end}}
   {{if .Bundle}}<button class="option__remove" type="button"
           hx-post="/bundles/{{.Bundle.BundleID}}/delete" hx-target="#list" hx-swap="outerHTML"
-          hx-confirm="Delete {{.Bundle.BundleName}}? This removes the Bundle Options and their comments."
+          data-confirm="Delete {{.Bundle.BundleName}}? This removes the Bundle Options and their comments."
           aria-label="Remove {{.Bundle.BundleName}}">&times;</button>{{else}}<button class="option__remove" type="button"
           hx-post="/options/{{.ID}}/delete" hx-target="{{if .Chosen}}#list{{else}}#item-{{.ItemID}}{{end}}" hx-swap="outerHTML"
           aria-label="Remove {{.Title}}">&times;</button>{{end}}

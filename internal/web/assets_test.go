@@ -139,3 +139,26 @@ func TestHtmxIsVendored(t *testing.T) {
 	assertNotContains(t, page, "//cdn.jsdelivr.net")
 	assertNotContains(t, page, "//cdnjs.cloudflare.com")
 }
+
+func TestSharedSurfaceShell(t *testing.T) {
+	s, _ := newServer(t)
+
+	page := do(t, s, http.MethodGet, "/", nil).Body.String()
+	assertContains(t, page, `id="add-item-sheet"`)
+	assertContains(t, page, `id="workspace"`)
+	assertContains(t, page, `id="confirmation-dialog"`)
+	assertContains(t, page, `src="/static/controller.js"`)
+	assertNotContains(t, page, "hx-confirm")
+
+	controller := do(t, s, http.MethodGet, "/static/controller.js", nil)
+	assertStatus(t, controller, http.StatusOK)
+	if controller.Body.Len() < 1000 {
+		t.Errorf("controller.js is %d bytes, looks truncated", controller.Body.Len())
+	}
+
+	css := do(t, s, http.MethodGet, "/static/app.css", nil).Body.String()
+	assertContains(t, css, ".surface {\n  position: fixed;")
+	assertContains(t, css, "transform: translateX(100%);")
+	assertContains(t, css, "@media (max-width: 700px)")
+	assertContains(t, css, "transform: translateY(100%);")
+}

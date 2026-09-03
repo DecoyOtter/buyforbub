@@ -79,10 +79,10 @@
                      autocomplete="off" aria-label="Comment on {{.Name}}">
             </form>
           </section>
-          {{if .Chosen}}<span class="option__badge">Bought this</span>{{else}}<button class="option__choose" type="button" hx-post="/bundles/{{.ID}}/choose" hx-target="#list" hx-swap="outerHTML" hx-confirm="{{.ChooseConfirm}}">Choose Bundle</button>{{end}}
+          {{if .Chosen}}<span class="option__badge">Bought this</span>{{else}}<button class="option__choose" type="button" hx-post="/bundles/{{.ID}}/choose" hx-target="#list" hx-swap="outerHTML" data-confirm="{{.ChooseConfirm}}">Choose Bundle</button>{{end}}
           <details class="bundle-edit">
             <summary class="btn btn--quiet">Edit Bundle</summary>
-            <form class="bundle-create__form" hx-post="/bundles/{{.ID}}" hx-target="#list" hx-swap="outerHTML"{{if .Chosen}} hx-confirm="Saving will unchoose this Bundle and mark {{.AffectedItems}} needed. Continue?"{{end}}>
+            <form class="bundle-create__form" hx-post="/bundles/{{.ID}}" hx-target="#list" hx-swap="outerHTML"{{if .Chosen}} data-confirm="Saving will unchoose this Bundle and mark {{.AffectedItems}} needed. Continue?"{{end}}>
               <label class="bundle-create__field"><span>Name</span><input type="text" name="name" value="{{.Name}}" required autocomplete="off"></label>
               <label class="bundle-create__field"><span>URL</span><input type="url" name="url" value="{{.URL}}" required inputmode="url" autocomplete="off"></label>
               <label class="bundle-create__field"><span>Bundle price</span><input type="text" name="price" value="{{.PriceInput}}" required inputmode="decimal" autocomplete="off"></label>
@@ -99,7 +99,7 @@
               <button class="btn btn--primary" type="submit">Save Bundle</button>
             </form>
           </details>
-          <form class="bundle-delete" hx-post="/bundles/{{.ID}}/delete" hx-target="#list" hx-swap="outerHTML" hx-confirm="Delete {{.Name}}? This removes Bundle Options and comments for {{.AffectedItems}}.">
+          <form class="bundle-delete" hx-post="/bundles/{{.ID}}/delete" hx-target="#list" hx-swap="outerHTML" data-confirm="Delete {{.Name}}? This removes Bundle Options and comments for {{.AffectedItems}}.">
             <button class="btn btn--danger" type="submit">Delete Bundle</button>
           </form>
         </div>

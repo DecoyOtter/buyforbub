@@ -45,7 +45,7 @@
               hx-get="/items/{{.Item.ID}}/edit" hx-target="#item-{{.Item.ID}}" hx-swap="outerHTML">Edit item</button>
       <button class="btn btn--danger" type="button"
               hx-post="/items/{{.Item.ID}}/delete" hx-target="#list" hx-swap="outerHTML"
-              hx-confirm="Delete {{.Item.Name}}?">Delete item</button>
+              data-confirm="Delete {{.Item.Name}}?">Delete item</button>
     </div>
     {{end}}
   </div>

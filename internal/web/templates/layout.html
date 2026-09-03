@@ -22,6 +22,47 @@
 <main class="main">
   {{template "list" .List}}
 </main>
+
+<div class="surface-backdrop" data-surface-backdrop hidden></div>
+
+<aside id="add-item-sheet" class="surface surface--sheet" aria-labelledby="add-item-title"
+       aria-modal="true" role="dialog" hidden tabindex="-1">
+  <div class="surface__head">
+    <div>
+      <p class="surface__eyebrow">New on the list</p>
+      <h2 id="add-item-title">Add an Item</h2>
+    </div>
+    <button class="surface__close" type="button" data-close-surface aria-label="Close Add Item">&times;</button>
+  </div>
+  <div id="add-item-sheet-content" class="surface__content"></div>
+</aside>
+
+<aside id="workspace" class="surface surface--workspace" aria-labelledby="workspace-title"
+       aria-modal="true" role="dialog" hidden tabindex="-1">
+  <div class="surface__head">
+    <div>
+      <p class="surface__eyebrow">Focused view</p>
+      <h2 id="workspace-title">Workspace</h2>
+    </div>
+    <button class="surface__close" type="button" data-close-surface aria-label="Close workspace">&times;</button>
+  </div>
+  <div id="workspace-content" class="surface__content" aria-live="polite"></div>
+</aside>
+
+<dialog id="confirmation-dialog" class="confirmation-dialog" aria-labelledby="confirmation-dialog-title"
+        aria-describedby="confirmation-dialog-message" hidden>
+  <form method="dialog" class="confirmation-dialog__form">
+    <p class="surface__eyebrow">Please confirm</p>
+    <h2 id="confirmation-dialog-title">Are you sure?</h2>
+    <p id="confirmation-dialog-message"></p>
+    <div class="confirmation-dialog__actions">
+      <button class="btn" type="button" data-confirm-cancel>Cancel</button>
+      <button class="btn btn--primary" type="button" data-confirm-accept>Confirm</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/static/controller.js" defer></script>
 </body>
 </html>
 {{end}}
