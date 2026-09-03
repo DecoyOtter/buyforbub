@@ -61,6 +61,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.Serve
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
+	s.mux.HandleFunc("GET /bundles/{bid}", s.handleBundleDetail)
 	s.mux.HandleFunc("POST /items", s.handleAdd)
 	s.mux.HandleFunc("POST /bundles", s.handleAddBundle)
 	s.mux.HandleFunc("POST /bundles/{bid}", s.handleUpdateBundle)
@@ -308,6 +309,14 @@ func (s *Server) handleAddBundle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderList(w, r)
+}
+
+func (s *Server) handleBundleDetail(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	s.renderBundleWorkspace(w, r, id)
 }
 
 func (s *Server) handleUpdateBundle(w http.ResponseWriter, r *http.Request) {
@@ -729,6 +738,21 @@ func (s *Server) renderDetail(w http.ResponseWriter, r *http.Request, id int64, 
 		return
 	}
 	s.render(w, r, http.StatusOK, "detail", data)
+}
+
+func (s *Server) renderBundleWorkspace(w http.ResponseWriter, r *http.Request, id int64) {
+	list, err := s.listData(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	for _, bundle := range list.Bundles {
+		if bundle.ID == id {
+			s.render(w, r, http.StatusOK, "bundle-detail", bundle)
+			return
+		}
+	}
+	s.fail(w, r, store.ErrNotFound)
 }
 
 func (s *Server) detailData(ctx context.Context, id int64, editing bool) (detailData, error) {

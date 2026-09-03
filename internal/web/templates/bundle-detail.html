@@ -1,0 +1,41 @@
+{{define "bundle-detail"}}<article id="bundle-{{.ID}}" class="bundle-workspace">
+  <div class="bundle-workspace__hero">
+    <p class="eyebrow">A store package</p>
+    <h1>{{.Name}}</h1>
+    {{if .Chosen}}<span class="bundle-workspace__status">Chosen</span>{{end}}
+  </div>
+
+  <div class="bundle-workspace__price" aria-label="Bundle price">
+    <strong>{{.PriceText}}</strong>
+    <span>Bundle price</span>
+    {{if .RegularPriceCents}}<small>Regular {{.RegularPriceText}} · Save {{.SavingsText}} ({{.SavingsPercent}}%)</small>{{end}}
+  </div>
+
+  <a class="bundle-workspace__shop" href="{{.URL}}" target="_blank" rel="noopener noreferrer">View at shop</a>
+
+  <section class="bundle-workspace__members" aria-labelledby="bundle-members-title">
+    <div class="bundle-workspace__section-head">
+      <h2 id="bundle-members-title">Includes {{len .Members}} Items</h2>
+      <span>Equal shares</span>
+    </div>
+    <ul>
+      {{range .Members}}<li>
+        <span><strong>{{.Label}}</strong>{{if ne .Label .ItemName}}<small>{{.ItemName}}</small>{{end}}</span>
+        <strong>{{.ShareText}}</strong>
+      </li>{{end}}
+    </ul>
+  </section>
+
+  <section class="comments comments--bundle bundle-workspace__comments" aria-label="Bundle Comments">
+    <h2 class="comments__title">Bundle Comments</h2>
+    {{range .Comments}}<div class="comment">
+      <span class="comment__body">{{.Body}}</span><span class="comment__age">{{.Age}}</span>
+      <button class="comment__remove" type="button" hx-post="/bundle-comments/{{.ID}}/delete"
+              hx-target="#workspace-content" hx-swap="innerHTML" aria-label="Remove Bundle Comment">&times;</button>
+    </div>{{end}}
+    <form class="comment-add" hx-post="/bundles/{{.ID}}/comments" hx-target="#workspace-content" hx-swap="innerHTML">
+      <input type="text" name="body" placeholder="Add a Bundle Comment" required autocomplete="off" aria-label="Comment on {{.Name}}">
+    </form>
+  </section>
+</article>
+{{end}}

@@ -167,6 +167,10 @@ func TestBundleCommentsRenderAndRefreshEveryCopy(t *testing.T) {
 	rec := do(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID)+"/comments", url.Values{"body": {" includes adapter "}})
 	assertStatus(t, rec, http.StatusOK)
 	body := rec.Body.String()
+	assertContains(t, body, `id="list"`)
+
+	rec = do(t, s, http.MethodGet, "/bundles/"+itoa(bundle.ID), nil)
+	body = rec.Body.String()
 	assertContains(t, body, "Bundle Comments")
 	assertContains(t, body, "includes adapter")
 	assertContains(t, body, `hx-post="/bundle-comments/`)
@@ -186,6 +190,8 @@ func TestBundleCommentsRenderAndRefreshEveryCopy(t *testing.T) {
 	}
 	rec = do(t, s, http.MethodPost, "/bundle-comments/"+itoa(comment[0].ID)+"/delete", nil)
 	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `id="list"`)
+	rec = do(t, s, http.MethodGet, "/bundles/"+itoa(bundle.ID), nil)
 	assertNotContains(t, rec.Body.String(), "includes adapter")
 }
 
