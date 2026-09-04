@@ -1,4 +1,4 @@
-{{define "list"}}<div id="list" class="list">
+{{define "list"}}<div id="list" class="list"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
   <section class="dashboard" aria-label="Shopping progress">
     <div class="dashboard__copy">
       <p class="eyebrow">The little things, together</p>
@@ -10,8 +10,6 @@
       {{if .Total}}<progress value="{{.Done}}" max="{{.Total}}"></progress>{{end}}
     </div>
   </section>
-
-  <button class="add-item-trigger btn btn--primary" type="button" data-open-surface="#add-item-sheet">Add Item</button>
 
   <section class="budget-total" aria-label="Whole list budget">
     <div class="budget-total__actual" aria-label="Actual spend"><span>Actual</span><strong>{{.Overall.ActualText}}</strong></div>
@@ -45,7 +43,10 @@
   </aside>
   <section class="checklist" aria-label="Shopping list by Category">
   <section class="progress">
-    <p class="progress__text" aria-live="polite" aria-label="{{.Done}} of {{.Total}} done"><strong>{{.Done}}</strong> Done <span>/</span> <strong>{{.Total}}</strong> Total</p>
+    <div class="progress__head">
+      <p class="progress__text" aria-live="polite" aria-label="{{.Done}} of {{.Total}} done"><strong>{{.Done}}</strong> Done <span>/</span> <strong>{{.Total}}</strong> Total</p>
+      <button class="add-item-trigger btn btn--primary" type="button" data-open-surface="#add-item-sheet">Add Item</button>
+    </div>
     {{if .Total}}<progress class="progress__bar" value="{{.Done}}" max="{{.Total}}"></progress>{{end}}
   </section>
 

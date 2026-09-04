@@ -192,6 +192,21 @@ func TestAddBundle(t *testing.T) {
 	}
 }
 
+func TestAddBundleRefreshesListOutOfBand(t *testing.T) {
+	s, st := newServer(t)
+	first := mustAdd(t, st, "Cot", "Nursery")
+	second := mustAdd(t, st, "Pram", "Travel")
+	rec := doHTMX(t, s, http.MethodPost, "/bundles", url.Values{
+		"name": {"Sleep bundle"}, "url": {"https://shop.example/sleep"}, "price": {"99.99"},
+		"item_id": {itoa(first.ID), itoa(second.ID)},
+	})
+
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `id="list" class="list" hx-swap-oob="outerHTML"`)
+	assertContains(t, body, "Sleep bundle")
+}
+
 func TestBundleValuesAreEscaped(t *testing.T) {
 	s, st := newServer(t)
 	first := mustAdd(t, st, "Cot", "Nursery")

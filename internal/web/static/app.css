@@ -229,6 +229,7 @@ body {
 }
 
 .bundle-rail__cards { display: flex; gap: 9px; overflow-x: auto; padding: 2px 1px 5px; scrollbar-width: thin; overscroll-behavior-inline: contain; }
+.bundle-rail > .btn { display: block; margin-bottom: 12px; }
 
 .bundle-create { margin-bottom: 10px; }
 .bundle-create summary { display: inline-flex; align-items: center; list-style: none; }
@@ -321,6 +322,31 @@ body {
 .bundle-form__component span { grid-column: 2; }
 .bundle-form__actions { display: flex; justify-content: flex-end; padding-top: 2px; }
 
+@supports selector(.surface__content:has(> .bundle-form)) {
+  .surface__content:has(> .bundle-form) {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .bundle-form {
+    flex: 1;
+    min-height: 0;
+    margin-inline: -4px;
+    overflow: auto;
+    padding-inline: 4px;
+  }
+
+  .bundle-form__actions {
+    flex: none;
+    margin-inline: -4px;
+    padding: 14px 4px 0;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+}
+
 .option__bundle-meta-row {
   display: flex;
   flex-basis: 100%;
@@ -334,7 +360,7 @@ body {
 
 /* --- add form --- */
 
-.add-item-trigger { display: block; margin: 0 auto 26px; }
+.add-item-trigger { flex: none; }
 
 .surface-form { display: grid; gap: 18px; }
 .surface-form__field { display: grid; gap: 6px; }
@@ -356,7 +382,7 @@ body {
 
 input, select, button { font: inherit; }
 
-input[type="text"], input[type="number"], select {
+input[type="text"], input[type="number"], input[type="url"], select {
   min-height: var(--tap);
   padding: 0 12px;
   border: 1px solid var(--border);
@@ -385,8 +411,17 @@ input[type="text"], input[type="number"], select {
 .checklist { width: min(100%, 760px); margin: 0 auto; }
 .progress { margin-bottom: 22px; }
 
+.progress__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+
 .progress__text {
-  margin: 0 0 8px;
+  margin: 0;
   color: var(--muted);
   font-size: 0.85rem;
   font-variant-numeric: tabular-nums;
@@ -685,7 +720,7 @@ input[type="text"], input[type="number"], select {
 
 .detail__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 4px;
   margin-left: -8px;
 }
@@ -694,7 +729,7 @@ input[type="text"], input[type="number"], select {
   flex: 1;
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 0 8px;
   padding: 12px 0;
 }
@@ -1157,7 +1192,12 @@ input[type="text"], input[type="number"], select {
   cursor: pointer;
 }
 
-.surface__content { min-height: 0; overflow: auto; padding-top: 20px; }
+.surface__content {
+  min-height: 0;
+  margin-inline: -4px;
+  overflow: auto;
+  padding: 20px 4px 4px;
+}
 
 .confirmation-dialog {
   width: min(calc(100% - 32px), 430px);

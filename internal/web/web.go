@@ -111,6 +111,7 @@ type listData struct {
 	Overall     store.BudgetSummary
 	Done        int
 	Total       int
+	OOB         bool
 }
 
 type groupData struct {
@@ -137,6 +138,11 @@ type bundleData struct {
 type bundleWorkspaceData struct {
 	Bundle *bundleData
 	Form   *bundleFormData
+}
+
+type bundleCreateData struct {
+	Workspace bundleWorkspaceData
+	List      listData
 }
 
 type bundleFormData struct {
@@ -355,7 +361,7 @@ func (s *Server) handleAddBundle(w http.ResponseWriter, r *http.Request) {
 		s.renderBundleError(w, r, 0, form, in, err)
 		return
 	}
-	s.renderBundleWorkspace(w, r, bundle.ID)
+	s.renderBundleCreateResult(w, r, bundle.ID)
 }
 
 func (s *Server) handleNewBundle(w http.ResponseWriter, r *http.Request) {
@@ -888,6 +894,29 @@ func (s *Server) renderBundleWorkspace(w http.ResponseWriter, r *http.Request, i
 	for _, bundle := range list.Bundles {
 		if bundle.ID == id {
 			s.render(w, r, http.StatusOK, "bundle-detail", bundleWorkspaceData{Bundle: &bundle})
+			return
+		}
+	}
+	s.fail(w, r, store.ErrNotFound)
+}
+
+func (s *Server) renderBundleCreateResult(w http.ResponseWriter, r *http.Request, id int64) {
+	list, err := s.listData(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	for _, bundle := range list.Bundles {
+		if bundle.ID == id {
+			if !isHTMX(r) {
+				s.render(w, r, http.StatusOK, "bundle-detail", bundleWorkspaceData{Bundle: &bundle})
+				return
+			}
+			list.OOB = true
+			s.render(w, r, http.StatusOK, "bundle-create", bundleCreateData{
+				Workspace: bundleWorkspaceData{Bundle: &bundle},
+				List:      list,
+			})
 			return
 		}
 	}

@@ -114,8 +114,10 @@
     {{with index .Errors "members"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
   </div>
 
-  <div class="bundle-form__actions">
-    <button class="btn btn--primary" type="submit">{{.SubmitText}}</button>
-  </div>
 </form>
+<div class="bundle-form__actions">
+  <button class="btn btn--primary" type="submit" form="bundle-form">{{.SubmitText}}</button>
+</div>
 {{end}}
+
+{{define "bundle-create"}}{{template "bundle-detail" .Workspace}}{{template "list" .List}}{{end}}
