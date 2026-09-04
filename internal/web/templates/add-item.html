@@ -1,0 +1,24 @@
+{{define "add-item"}}<form id="add-item-form" class="surface-form add-item" hx-post="/items" hx-target="#list" hx-swap="outerHTML"
+  data-close-on-success="true" hx-on::after-request="if (event.detail.successful && !event.detail.xhr.getResponseHeader('HX-Trigger')) this.reset();">
+  <label class="surface-form__field{{if index .Errors "name"}} has-error{{end}}">
+    <span>Item</span>
+    <input type="text" name="name" value="{{.Name}}" required autocomplete="off" data-surface-focus>
+    {{with index .Errors "name"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+  </label>
+  <label class="surface-form__field{{if index .Errors "category"}} has-error{{end}}">
+    <span>Category</span>
+    <select name="category" required>
+      {{range .Categories}}<option value="{{.}}"{{if eq . $.Category}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+    {{with index .Errors "category"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+  </label>
+  <label class="surface-form__field{{if index .Errors "qty"}} has-error{{end}}">
+    <span>Qty</span>
+    <input type="number" name="qty" value="{{.Qty}}" min="1" step="1" required inputmode="numeric">
+    {{with index .Errors "qty"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+  </label>
+  <div class="surface-form__actions">
+    <button class="btn btn--primary" type="submit">Add Item</button>
+  </div>
+</form>
+{{end}}

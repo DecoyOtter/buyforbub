@@ -22,14 +22,109 @@ func TestBundleCreateForm(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 	body := rec.Body.String()
 	assertContains(t, body, "Add Bundle")
+	assertContains(t, body, `hx-get="/bundles/new"`)
+
+	rec = do(t, s, http.MethodGet, "/bundles/new", nil)
+	assertStatus(t, rec, http.StatusOK)
+	body = rec.Body.String()
 	assertContains(t, body, `hx-post="/bundles"`)
+	assertContains(t, body, `hx-target="#workspace-content"`)
 	assertContains(t, body, `name="regular_price"`)
-	assertContains(t, body, "The Bundle price is split equally per Item.")
+	assertContains(t, body, "Pick the Items this Bundle covers.")
+	assertContains(t, body, `data-bundle-share`)
 	assertContains(t, body, `value="`+itoa(cot.ID)+`"`)
 	assertContains(t, body, `name="component_label_`+itoa(cot.ID)+`"`)
 	assertContains(t, body, "Nursery")
 	assertContains(t, body, "Travel")
 	assertContains(t, body, "bought · City pram")
+}
+
+func TestBundleWorkspaceFormValidationKeepsStoreUnchanged(t *testing.T) {
+	cases := []struct {
+		name string
+		set  func(url.Values, int64)
+		want string
+	}{
+		{name: "name", set: func(form url.Values, _ int64) { form.Set("name", "") }, want: "Give the bundle a name."},
+		{name: "url", set: func(form url.Values, _ int64) { form.Set("url", "shop.example/bundle") }, want: "That does not look like a link."},
+		{name: "price", set: func(form url.Values, _ int64) { form.Set("price", "bad") }, want: "Bundle price must be greater than zero"},
+		{name: "regular price", set: func(form url.Values, _ int64) { form.Set("regular_price", "1.999") }, want: "Regular price must be a number"},
+		{name: "membership", set: func(form url.Values, first int64) { form.Set("item_id", itoa(first)) }, want: "Choose at least two different Items."},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			s, st := newServer(t)
+			first := mustAdd(t, st, "Cot", "Nursery")
+			second := mustAdd(t, st, "Pram", "Travel")
+			form := url.Values{
+				"name": {"Sleep bundle"}, "url": {"https://shop.example/bundle"}, "price": {"100"},
+				"regular_price": {"120"}, "item_id": {itoa(first.ID), itoa(second.ID)},
+			}
+			tt.set(form, first.ID)
+			rec := doHTMX(t, s, http.MethodPost, "/bundles", form)
+			assertStatus(t, rec, http.StatusOK)
+			assertContains(t, rec.Body.String(), tt.want)
+			assertContains(t, rec.Body.String(), `name="component_label_`+itoa(first.ID)+`"`)
+			assertContains(t, rec.Header().Get("HX-Retarget"), "#workspace-content")
+			if bundles, err := st.ListBundles(context.Background()); err != nil || len(bundles) != 0 {
+				t.Fatalf("bundles after invalid create = %#v, %v", bundles, err)
+			}
+		})
+	}
+
+	s, st := newServer(t)
+	first := mustAdd(t, st, "Cot", "Nursery")
+	second := mustAdd(t, st, "Pram", "Travel")
+	bundle, err := st.AddBundle(context.Background(), store.BundleInput{
+		Name: "Sleep bundle", URL: "https://shop.example/sleep", Price: "100",
+		Members: []store.BundleMemberInput{{ItemID: first.ID}, {ItemID: second.ID}},
+	})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+	rec := doHTMX(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID), url.Values{
+		"name": {"Still here"}, "url": {"https://shop.example/sleep"}, "price": {"100"},
+		"item_id": {itoa(first.ID)},
+	})
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), "Choose at least two different Items.")
+	updated, err := st.GetBundle(context.Background(), bundle.ID)
+	if err != nil || updated.Name != "Sleep bundle" || len(updated.Members) != 2 {
+		t.Fatalf("bundle after invalid edit = %#v, %v", updated, err)
+	}
+}
+
+func TestBundleEditFormPrefillsMembersAndSaveStaysInWorkspace(t *testing.T) {
+	s, st := newServer(t)
+	first := mustAdd(t, st, "Cot", "Nursery")
+	second := mustAdd(t, st, "Pram", "Travel")
+	bundle, err := st.AddBundle(context.Background(), store.BundleInput{
+		Name: "Sleep bundle", URL: "https://shop.example/sleep", Price: "100", RegularPrice: "120",
+		Members: []store.BundleMemberInput{{ItemID: first.ID, ComponentLabel: "Frame"}, {ItemID: second.ID}},
+	})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+
+	rec := do(t, s, http.MethodGet, "/bundles/"+itoa(bundle.ID)+"/edit", nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`"`)
+	assertContains(t, body, `value="Frame"`)
+	assertContains(t, body, `value="120.00"`)
+	assertContains(t, body, `value="`+itoa(first.ID)+`" checked`)
+
+	rec = doHTMX(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID), url.Values{
+		"name": {"Travel bundle"}, "url": {"https://shop.example/travel"}, "price": {"99.99"},
+		"item_id": {itoa(first.ID), itoa(second.ID)}, "component_label_" + itoa(second.ID): {"Seat"},
+	})
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), "Travel bundle")
+	assertNotContains(t, rec.Body.String(), `id="list"`)
+	updated, err := st.GetBundle(context.Background(), bundle.ID)
+	if err != nil || updated.Name != "Travel bundle" || updated.PriceCents != 9999 || updated.Members[1].ComponentLabel != "Seat" {
+		t.Fatalf("updated bundle = %#v, %v", updated, err)
+	}
 }
 
 func TestAddBundle(t *testing.T) {
@@ -97,6 +192,21 @@ func TestAddBundle(t *testing.T) {
 	}
 }
 
+func TestAddBundleRefreshesListOutOfBand(t *testing.T) {
+	s, st := newServer(t)
+	first := mustAdd(t, st, "Cot", "Nursery")
+	second := mustAdd(t, st, "Pram", "Travel")
+	rec := doHTMX(t, s, http.MethodPost, "/bundles", url.Values{
+		"name": {"Sleep bundle"}, "url": {"https://shop.example/sleep"}, "price": {"99.99"},
+		"item_id": {itoa(first.ID), itoa(second.ID)},
+	})
+
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `id="list" class="list" hx-swap-oob="outerHTML"`)
+	assertContains(t, body, "Sleep bundle")
+}
+
 func TestBundleValuesAreEscaped(t *testing.T) {
 	s, st := newServer(t)
 	first := mustAdd(t, st, "Cot", "Nursery")
@@ -125,15 +235,22 @@ func TestUpdateBundle(t *testing.T) {
 		t.Fatalf("ChooseBundle: %v", err)
 	}
 
+	editRec := do(t, s, http.MethodGet, "/bundles/"+itoa(bundle.ID)+"/edit", nil)
+	assertStatus(t, editRec, http.StatusOK)
+	assertContains(t, editRec.Body.String(), `data-confirm="Saving will unchoose this Bundle and mark Cot and Pram needed. Continue?"`)
+
 	rec := do(t, s, http.MethodGet, "/", nil)
 	assertStatus(t, rec, http.StatusOK)
 	body := rec.Body.String()
-	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`"`)
-	assertContains(t, body, `value="100.00"`)
-	assertContains(t, body, `value="150.00"`)
-	assertContains(t, body, `value="Frame"`)
-	assertContains(t, body, "Saving will unchoose this Bundle and mark Cot and Pram needed.")
-	assertContains(t, body, "Removing a member deletes its Bundle Option and comments.")
+	assertContains(t, body, `hx-get="/bundles/`+itoa(bundle.ID)+`"`)
+
+	rec = do(t, s, http.MethodGet, "/bundles/"+itoa(bundle.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	body = rec.Body.String()
+	assertContains(t, body, "Sleep bundle")
+	assertContains(t, body, "Frame")
+	assertContains(t, body, "$50")
+	assertNotContains(t, body, `id="list"`)
 
 	rec = do(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID), url.Values{
 		"name": {"Travel bundle"}, "url": {"https://shop.example/travel"}, "price": {"120"},
@@ -177,8 +294,53 @@ func TestDeleteBundle(t *testing.T) {
 
 func TestBundleMutationMissingOrMalformedID(t *testing.T) {
 	s, _ := newServer(t)
-	for _, path := range []string{"/bundles/nope", "/bundles/nope/delete", "/bundles/99", "/bundles/99/delete"} {
-		rec := do(t, s, http.MethodPost, path, url.Values{"item_id": {"1", "2"}})
+	for _, request := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/bundles/nope"}, {http.MethodPost, "/bundles/nope/delete"},
+		{http.MethodGet, "/bundles/99"}, {http.MethodPost, "/bundles/99/delete"},
+	} {
+		rec := do(t, s, request.method, request.path, url.Values{"item_id": {"1", "2"}})
 		assertStatus(t, rec, http.StatusNotFound)
+	}
+}
+
+func TestBundleWorkspaceRendersWithoutChangingData(t *testing.T) {
+	s, st := newServer(t)
+	first := mustAdd(t, st, "Cot", "Nursery")
+	second := mustAdd(t, st, "Pram", "Travel")
+	bundle, err := st.AddBundle(context.Background(), store.BundleInput{
+		Name: "Sleep bundle", URL: "https://shop.example/sleep", Price: "100", RegularPrice: "150",
+		Members: []store.BundleMemberInput{{ItemID: first.ID, ComponentLabel: "Cot frame"}, {ItemID: second.ID}},
+	})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+
+	rec := do(t, s, http.MethodGet, "/bundles/"+itoa(bundle.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `id="bundle-`+itoa(bundle.ID)+`"`)
+	assertContains(t, body, "Sleep bundle")
+	assertContains(t, body, "$100")
+	assertContains(t, body, "Includes 2 Items")
+	assertContains(t, body, "Cot frame")
+	assertContains(t, body, "$50")
+	assertContains(t, body, "Save $50 (33%)")
+	assertContains(t, body, `href="https://shop.example/sleep"`)
+	assertNotContains(t, body, `id="list"`)
+	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`/choose"`)
+	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`/delete"`)
+	assertContains(t, body, `data-close-on-success="true"`)
+	assertContains(t, body, "Option Comments for Cot and Pram.")
+
+	rec = do(t, s, http.MethodGet, "/bundles/"+itoa(bundle.ID)+"/edit", nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertNotContains(t, rec.Body.String(), `data-confirm=`)
+
+	got, err := st.GetBundle(context.Background(), bundle.ID)
+	if err != nil || got.Name != bundle.Name || len(got.Members) != 2 {
+		t.Fatalf("bundle after workspace GET = %#v, %v", got, err)
 	}
 }

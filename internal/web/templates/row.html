@@ -1,10 +1,11 @@
-{{define "row"}}<li id="item-{{.ID}}" class="item{{if .Bought}} is-bought{{end}}">
+{{define "row"}}<li id="item-{{.ID}}" class="item trail-item{{if .Bought}} is-bought{{end}}">
   <button class="item__check" type="button"
           hx-post="/items/{{.ID}}/toggle" hx-target="#list" hx-swap="outerHTML"
           aria-pressed="{{.Bought}}"
           aria-label="Mark {{.Name}} as {{if .Bought}}still needed{{else}}bought{{end}}"></button>
   <button class="item__open" type="button"
-          hx-get="/items/{{.ID}}" hx-target="#item-{{.ID}}" hx-swap="outerHTML"
+          hx-get="/items/{{.ID}}" hx-target="#workspace-content" hx-swap="innerHTML"
+          data-open-surface="#workspace"
           aria-label="Open {{.Name}}">
     <span class="item__name">{{.Name}}</span>
     {{if gt .Qty 1}}<span class="item__qty">&times;{{.Qty}}</span>{{end}}
@@ -17,7 +18,8 @@
     <div class="item__money"><strong>{{.BudgetText}}</strong><span>Budget</span></div>
   {{else}}
     <button class="item__set-budget" type="button"
-            hx-get="/items/{{.ID}}/edit" hx-target="#item-{{.ID}}" hx-swap="outerHTML"
+            hx-get="/items/{{.ID}}/edit" hx-target="#workspace-content" hx-swap="innerHTML"
+            data-open-surface="#workspace"
             aria-label="Set budget for {{.Name}}">Set budget</button>
   {{end}}
 </li>

@@ -1,96 +1,58 @@
-{{define "list"}}<div id="list" class="list">
-  <aside class="bundle-rail" aria-label="Bundles">
-    <div class="bundle-rail__head"><h2>Bundles</h2><span>{{len .Bundles}}</span></div>
-    <details class="bundle-create">
-      <summary class="btn btn--primary">Add Bundle</summary>
-      <form class="bundle-create__form" hx-post="/bundles" hx-target="#list" hx-swap="outerHTML">
-        <label class="bundle-create__field"><span>Name</span><input type="text" name="name" required autocomplete="off"></label>
-        <label class="bundle-create__field"><span>URL</span><input type="url" name="url" required inputmode="url" autocomplete="off"></label>
-        <label class="bundle-create__field"><span>Bundle price</span><input type="text" name="price" required inputmode="decimal" autocomplete="off"></label>
-        <label class="bundle-create__field"><span>Regular price <em>(optional)</em></span><input type="text" name="regular_price" inputmode="decimal" autocomplete="off"></label>
-        <p class="bundle-create__hint">Choose at least two Items. The Bundle price is split equally per Item.</p>
-        <div class="bundle-create__items">
-          {{range .BundleItems}}<fieldset><legend>{{.Category}}</legend>
-            {{range .Items}}<div class="bundle-create__item">
-              <label><input type="checkbox" name="item_id" value="{{.ID}}"> <strong>{{.Name}}</strong> <span>{{.Status}}{{if .ChosenOption}} · {{.ChosenOption}}{{end}}</span></label>
-              <input type="text" name="component_label_{{.ID}}" placeholder="Component label (optional)" autocomplete="off" aria-label="Component label for {{.Name}}">
-            </div>{{end}}
-          </fieldset>{{end}}
-        </div>
-        <button class="btn btn--primary" type="submit">Create Bundle</button>
-      </form>
-    </details>
-    <div class="bundle-rail__cards">
-      {{range .Bundles}}{{$bundle := .}}<details class="bundle-card{{if .Chosen}} is-chosen{{end}}">
-        <summary class="bundle-card__summary">
-          <span class="bundle-card__name">{{.Name}}</span>
-          <span class="bundle-card__price">{{.PriceText}}</span>
-          <span class="bundle-card__meta">{{len .Members}} items{{if .Chosen}} · Chosen{{end}}</span>
-        </summary>
-        <div class="bundle-card__body">
-          <a class="bundle-card__url" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.URL}}</a>
-          {{if .RegularPriceCents}}<p class="bundle-card__saving">Regular {{.RegularPriceText}} · Save {{.SavingsText}} ({{.SavingsPercent}}%)</p>{{end}}
-          <ul class="bundle-card__members">
-            {{range .Members}}<li><span>{{.Label}}</span><strong>{{.ShareText}}</strong></li>{{end}}
-          </ul>
-          <section class="comments comments--bundle" aria-label="Bundle Comments">
-            <h3 class="comments__title">Bundle Comments</h3>
-            {{range .Comments}}<div class="comment">
-              <span class="comment__body">{{.Body}}</span>
-              <span class="comment__age">{{.Age}}</span>
-              <button class="comment__remove" type="button"
-                      hx-post="/bundle-comments/{{.ID}}/delete" hx-target="#list" hx-swap="outerHTML"
-                      aria-label="Remove Bundle Comment">&times;</button>
-            </div>{{end}}
-            <form class="comment-add" hx-post="/bundles/{{$bundle.ID}}/comments" hx-target="#list" hx-swap="outerHTML">
-              <input type="text" name="body" placeholder="Add a Bundle Comment" required
-                     autocomplete="off" aria-label="Comment on {{.Name}}">
-            </form>
-          </section>
-          {{if .Chosen}}<span class="option__badge">Bought this</span>{{else}}<button class="option__choose" type="button" hx-post="/bundles/{{.ID}}/choose" hx-target="#list" hx-swap="outerHTML" hx-confirm="{{.ChooseConfirm}}">Choose Bundle</button>{{end}}
-          <details class="bundle-edit">
-            <summary class="btn btn--quiet">Edit Bundle</summary>
-            <form class="bundle-create__form" hx-post="/bundles/{{.ID}}" hx-target="#list" hx-swap="outerHTML"{{if .Chosen}} hx-confirm="Saving will unchoose this Bundle and mark {{.AffectedItems}} needed. Continue?"{{end}}>
-              <label class="bundle-create__field"><span>Name</span><input type="text" name="name" value="{{.Name}}" required autocomplete="off"></label>
-              <label class="bundle-create__field"><span>URL</span><input type="url" name="url" value="{{.URL}}" required inputmode="url" autocomplete="off"></label>
-              <label class="bundle-create__field"><span>Bundle price</span><input type="text" name="price" value="{{.PriceInput}}" required inputmode="decimal" autocomplete="off"></label>
-              <label class="bundle-create__field"><span>Regular price <em>(optional)</em></span><input type="text" name="regular_price" value="{{.RegularPriceInput}}" inputmode="decimal" autocomplete="off"></label>
-              <p class="bundle-create__hint">Removing a member deletes its Bundle Option and comments.</p>
-              <div class="bundle-create__items">
-                {{range .EditItems}}<fieldset><legend>{{.Category}}</legend>
-                  {{range .Items}}<div class="bundle-create__item">
-                    <label><input type="checkbox" name="item_id" value="{{.ID}}"{{if .Selected}} checked{{end}}> <strong>{{.Name}}</strong> <span>{{.Status}}{{if .ChosenOption}} · {{.ChosenOption}}{{end}}</span></label>
-                    <input type="text" name="component_label_{{.ID}}" value="{{.ComponentLabel}}" placeholder="Component label (optional)" autocomplete="off" aria-label="Component label for {{.Name}}">
-                  </div>{{end}}
-                </fieldset>{{end}}
-              </div>
-              <button class="btn btn--primary" type="submit">Save Bundle</button>
-            </form>
-          </details>
-          <form class="bundle-delete" hx-post="/bundles/{{.ID}}/delete" hx-target="#list" hx-swap="outerHTML" hx-confirm="Delete {{.Name}}? This removes Bundle Options and comments for {{.AffectedItems}}.">
-            <button class="btn btn--danger" type="submit">Delete Bundle</button>
-          </form>
-        </div>
-      </details>{{end}}
+{{define "list"}}<div id="list" class="list"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
+  <section class="dashboard" aria-label="Shopping progress">
+    <div class="dashboard__copy">
+      <p class="eyebrow">The little things, together</p>
+      <h1>{{.Done}} of {{.Total}}<br>in the bag.</h1>
+      <p>Every nappy, cuddle and sleepy car ride begins here.</p>
     </div>
-  </aside>
-  <div class="checklist">
-  <section class="progress">
-    <p class="progress__text" aria-live="polite">{{.Done}} of {{.Total}} done</p>
-    {{if .Total}}<progress class="progress__bar" value="{{.Done}}" max="{{.Total}}"></progress>{{end}}
+    <div class="dashboard__meter" aria-label="{{.Done}} Done of {{.Total}} Total">
+      <span>{{.Done}}<small>/ {{.Total}}</small></span>
+      {{if .Total}}<progress value="{{.Done}}" max="{{.Total}}"></progress>{{end}}
+    </div>
   </section>
 
-  {{if .Total}}<section class="budget-total" aria-label="Whole list budget">
-    <div><span>Actual</span><strong>{{.Overall.ActualText}}</strong></div>
+  <section class="budget-total" aria-label="Whole list budget">
+    <div class="budget-total__actual" aria-label="Actual spend"><span>Actual</span><strong>{{.Overall.ActualText}}</strong></div>
     <div><span>Still planned</span><strong>{{.Overall.StillPlannedText}}</strong></div>
     <div><span>Expected total</span><strong>{{.Overall.ExpectedTotalText}}</strong></div>
     {{if or .Overall.UnbudgetedNeeded .Overall.UnknownActual}}<p class="budget-total__counts">
       {{if .Overall.UnbudgetedNeeded}}{{if eq .Overall.UnbudgetedNeeded 1}}1 item needs a budget{{else}}{{.Overall.UnbudgetedNeeded}} items need budgets{{end}}{{end}}{{if and .Overall.UnbudgetedNeeded .Overall.UnknownActual}} &middot; {{end}}{{if .Overall.UnknownActual}}{{if eq .Overall.UnknownActual 1}}1 bought item has an unknown actual{{else}}{{.Overall.UnknownActual}} bought items have unknown actuals{{end}}{{end}}
     </p>{{end}}
-  </section>{{end}}
+  </section>
+
+  <aside class="bundle-rail" aria-label="Bundles">
+    <div class="bundle-rail__head"><h2>Bundles</h2><span>{{len .Bundles}}</span></div>
+    <button class="btn btn--primary" type="button" hx-get="/bundles/new"
+            hx-target="#workspace-content" hx-swap="innerHTML" data-open-surface="#workspace">Add Bundle</button>
+    <div class="bundle-rail__cards" role="list">
+      {{range .Bundles}}<article class="bundle-card{{if .Chosen}} is-chosen{{end}}" role="listitem">
+        <button class="bundle-card__open" type="button"
+                hx-get="/bundles/{{.ID}}" hx-target="#workspace-content" hx-swap="innerHTML"
+                data-open-surface="#workspace" aria-label="Open {{.Name}}">
+          <span class="bundle-card__name">{{.Name}}</span>
+          <span class="bundle-card__price">{{.PriceText}}</span>
+          <span class="bundle-card__meta">{{len .Members}} Items</span>
+          {{if .RegularPriceCents}}<span class="bundle-card__saving">Save {{.SavingsText}} ({{.SavingsPercent}}%)</span>{{end}}
+          {{if .Chosen}}<span class="bundle-card__status">Chosen</span>{{end}}
+        </button>
+        {{if not .Chosen}}<button class="bundle-card__choose" type="button"
+                hx-post="/bundles/{{.ID}}/choose" hx-target="#list" hx-swap="outerHTML"
+                data-close-on-success="true" data-confirm="{{.ChooseConfirm}}">Choose</button>{{end}}
+      </article>{{end}}
+    </div>
+  </aside>
+  <section class="checklist" aria-label="Shopping list by Category">
+  <section class="progress">
+    <div class="progress__head">
+      <p class="progress__text" aria-live="polite" aria-label="{{.Done}} of {{.Total}} done"><strong>{{.Done}}</strong> Done <span>/</span> <strong>{{.Total}}</strong> Total</p>
+      <button class="add-item-trigger btn btn--primary" type="button" data-open-surface="#add-item-sheet">Add Item</button>
+    </div>
+    {{if .Total}}<progress class="progress__bar" value="{{.Done}}" max="{{.Total}}"></progress>{{end}}
+  </section>
 
   {{range .Groups}}
-  <section class="group">
+  <section class="group trail-stop">
+    <div class="trail-stop__pin" aria-hidden="true"><span></span></div>
     <div class="group__head">
       <h2 class="group__title">{{.Category}}</h2>
       <p><strong>{{.Summary.ActualText}} actual</strong><span>{{.Summary.StillPlannedText}} planned</span></p>
@@ -104,6 +66,6 @@
   {{else}}
   <p class="empty">Nothing on the list yet. Add the first thing above.</p>
   {{end}}
-  </div>
+  </section>
 </div>
 {{end}}

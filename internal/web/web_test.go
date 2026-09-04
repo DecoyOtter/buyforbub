@@ -48,6 +48,22 @@ func do(t *testing.T, s *Server, method, path string, form url.Values) *httptest
 	return rec
 }
 
+func doHTMX(t *testing.T, s *Server, method, path string, form url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var req *http.Request
+	if form == nil {
+		req = httptest.NewRequest(method, path, nil)
+	} else {
+		req = httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	req.Header.Set("HX-Request", "true")
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	return rec
+}
+
 func mustAdd(t *testing.T, st *store.Store, name, category string) store.Item {
 	t.Helper()
 	it, err := st.Add(context.Background(), store.ItemInput{Name: name, Category: category})
@@ -120,10 +136,11 @@ func TestBundleRailRendersOrderedCards(t *testing.T) {
 	if _, err := st.ChooseBundle(context.Background(), first.ID); err != nil {
 		t.Fatalf("ChooseBundle: %v", err)
 	}
-	if _, err := st.AddBundle(context.Background(), store.BundleInput{
+	second, err := st.AddBundle(context.Background(), store.BundleInput{
 		Name: "Travel bundle", URL: "https://shop.example/travel", Price: "99.99",
 		Members: []store.BundleMemberInput{{ItemID: pram.ID}, {ItemID: seat.ID}},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("AddBundle second: %v", err)
 	}
 
@@ -132,12 +149,14 @@ func TestBundleRailRendersOrderedCards(t *testing.T) {
 	body := rec.Body.String()
 	assertContains(t, body, `class="bundle-rail"`)
 	assertContains(t, body, "Sleep bundle")
-	assertContains(t, body, "https://shop.example/sleep")
-	assertContains(t, body, "2 items · Chosen")
-	assertContains(t, body, "Regular $150 · Save $50 (33%)")
-	assertContains(t, body, "Cot frame")
-	assertContains(t, body, "Pram")
-	assertContains(t, body, "$50")
+	assertContains(t, body, "2 Items")
+	assertContains(t, body, "Save $50 (33%)")
+	assertContains(t, body, "Chosen")
+	assertContains(t, body, `hx-get="/bundles/`+itoa(first.ID)+`"`)
+	assertContains(t, body, `hx-post="/bundles/`+itoa(second.ID)+`/choose"`)
+	assertContains(t, body, `data-confirm="Choose Travel bundle for Pram and Car seat.`)
+	assertContains(t, body, `data-open-surface="#workspace"`)
+	assertNotContains(t, body, `class="bundle-card__body"`)
 	assertOrder(t, body, "Sleep bundle", "Travel bundle")
 	assertContains(t, body, `id="list"`)
 	assertContains(t, body, `class="checklist"`)
@@ -199,6 +218,77 @@ func TestAddReturnsListFragment(t *testing.T) {
 	assertNotContains(t, body, "<!doctype html>")
 }
 
+func TestAddItemSheet(t *testing.T) {
+	s, _ := newServer(t)
+
+	rec := do(t, s, http.MethodGet, "/", nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `data-open-surface="#add-item-sheet"`)
+	assertContains(t, body, `id="add-item-form"`)
+	assertContains(t, body, `name="name"`)
+	assertContains(t, body, `name="category"`)
+	assertContains(t, body, `name="qty"`)
+	start := strings.Index(body, `id="add-item-form"`)
+	if start < 0 {
+		t.Fatal("add item form missing")
+	}
+	end := strings.Index(body[start:], "</form>")
+	if end < 0 {
+		t.Fatal("add item form has no closing tag")
+	}
+	form := body[start : start+end]
+	assertNotContains(t, form, `name="notes"`)
+	assertNotContains(t, form, `name="budget"`)
+	assertNotContains(t, form, `name="url"`)
+}
+
+func TestAddItemInvalidHTMXRendersFieldErrorWithoutSaving(t *testing.T) {
+	tests := []struct {
+		name      string
+		form      url.Values
+		field     string
+		wantError string
+	}{
+		{name: "name", form: url.Values{"name": {"  "}, "category": {"Nursery"}, "qty": {"1"}}, field: "name", wantError: "Give the item a name."},
+		{name: "category", form: url.Values{"name": {"Pram"}, "category": {"Vehicles"}, "qty": {"1"}}, field: "category", wantError: "Pick a category."},
+		{name: "qty", form: url.Values{"name": {"Pram"}, "category": {"Travel"}, "qty": {"many"}}, field: "qty", wantError: "Qty must be a whole number greater than zero."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, st := newServer(t)
+			rec := doHTMX(t, s, http.MethodPost, "/items", tt.form)
+			assertStatus(t, rec, http.StatusOK)
+			body := rec.Body.String()
+			assertContains(t, body, `id="add-item-form"`)
+			assertContains(t, body, `class="field-error" role="alert">`+tt.wantError+"</span>")
+			assertContains(t, body, `class="surface-form__field has-error"`)
+			items, err := st.List(context.Background())
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if len(items) != 0 {
+				t.Fatalf("stored %d items after invalid add, want 0", len(items))
+			}
+		})
+	}
+}
+
+func TestAddItemHTMXSuccessReturnsListForSheetClose(t *testing.T) {
+	s, st := newServer(t)
+
+	rec := doHTMX(t, s, http.MethodPost, "/items", url.Values{
+		"name": {"Pram"}, "category": {"Travel"}, "qty": {"2"},
+	})
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `id="list"`)
+	assertContains(t, rec.Body.String(), "Pram")
+	if _, err := st.Get(context.Background(), 1); err != nil {
+		t.Fatalf("Get added item: %v", err)
+	}
+}
+
 func TestToggleSinksBoughtItemsWithinGroup(t *testing.T) {
 	s, st := newServer(t)
 	first := mustAdd(t, st, "Cot", "Nursery")
@@ -218,6 +308,41 @@ func TestToggleSinksBoughtItemsWithinGroup(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 	assertContains(t, rec.Body.String(), "0 of 3 done")
 	assertOrder(t, rec.Body.String(), "Cot", "Sheets", "Monitor")
+}
+
+func TestDashboardShoppingTrail(t *testing.T) {
+	s, st := newServer(t)
+	bought := mustAddBudgetItem(t, st, store.ItemInput{Name: "Cot", Category: "Nursery", Budget: "$120"})
+	needed := mustAddBudgetItem(t, st, store.ItemInput{Name: "Sheets", Category: "Nursery", Budget: "$25"})
+	mustAdd(t, st, "Pram", "Travel")
+	option, err := st.AddOption(context.Background(), bought.ID, store.OptionInput{URL: "https://shop.example/cot", Price: "$75"})
+	if err != nil {
+		t.Fatalf("AddOption: %v", err)
+	}
+	if _, err := st.ChooseOption(context.Background(), option.ID); err != nil {
+		t.Fatalf("ChooseOption: %v", err)
+	}
+
+	rec := do(t, s, http.MethodGet, "/", nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `class="dashboard"`)
+	assertContains(t, body, "1 of 3")
+	assertContains(t, body, `aria-label="1 Done of 3 Total"`)
+	assertContains(t, body, `aria-label="Actual spend"`)
+	assertContains(t, body, `<span>Actual</span><strong>$75</strong>`)
+	assertContains(t, body, `<span>Still planned</span><strong>$25</strong>`)
+	assertContains(t, body, `<span>Expected total</span><strong>$100</strong>`)
+	assertContains(t, body, "1 item needs a budget")
+	assertContains(t, body, `class="group trail-stop"`)
+	assertContains(t, body, `class="item trail-item is-bought"`)
+	assertOrder(t, body, "Sheets", "Cot")
+	assertOrder(t, body, "Nursery", "Travel")
+
+	rec = do(t, s, http.MethodPost, "/items/"+itoa(needed.ID)+"/toggle", nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `id="list"`)
+	assertContains(t, rec.Body.String(), `aria-label="2 of 3 done"`)
 }
 
 func TestDetailPanel(t *testing.T) {
@@ -242,6 +367,113 @@ func TestDetailPanel(t *testing.T) {
 	body = rec.Body.String()
 	assertContains(t, body, `id="item-`+itoa(it.ID)+`"`)
 	assertNotContains(t, body, "is-open")
+}
+
+func TestItemWorkspaceAndOpenTarget(t *testing.T) {
+	s, st := newServer(t)
+	it, err := st.Add(context.Background(), store.ItemInput{
+		Name: "Cot", Category: "Nursery", Qty: 2, Notes: "Keep it snug", Budget: "$500",
+	})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	rec := do(t, s, http.MethodGet, "/", nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `hx-target="#workspace-content"`)
+	assertContains(t, rec.Body.String(), `data-open-surface="#workspace"`)
+
+	rec = do(t, s, http.MethodGet, "/items/"+itoa(it.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `id="item-`+itoa(it.ID)+`" class="item-workspace is-open"`)
+	assertContains(t, body, "Cot")
+	assertContains(t, body, "Nursery")
+	assertContains(t, body, "Qty")
+	assertContains(t, body, "2")
+	assertContains(t, body, "Needed")
+	assertContains(t, body, "Budget")
+	assertContains(t, body, "$500")
+	assertContains(t, body, "Edit item")
+	assertContains(t, body, "Delete item")
+	assertNotContains(t, body, "<!doctype html>")
+}
+
+func TestItemWorkspaceShowsActualSpend(t *testing.T) {
+	s, st := newServer(t)
+	it := mustAdd(t, st, "Cot", "Nursery")
+	op := mustAddOption(t, st, it.ID, store.OptionInput{URL: "https://shop.example/cot", Price: "$425"})
+	if _, err := st.ChooseOption(context.Background(), op.ID); err != nil {
+		t.Fatalf("ChooseOption: %v", err)
+	}
+
+	rec := do(t, s, http.MethodGet, "/items/"+itoa(it.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, "Bought")
+	assertContains(t, body, "Actual spend")
+	assertContains(t, body, "$425")
+}
+
+func TestEditItemWorkspaceValidationAndSave(t *testing.T) {
+	s, st := newServer(t)
+	it := mustAdd(t, st, "Cot", "Nursery")
+
+	rec := do(t, s, http.MethodGet, "/items/"+itoa(it.ID)+"/edit", nil)
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `id="edit-item-form"`)
+	for _, field := range []string{`name="name"`, `name="category"`, `name="qty"`, `name="notes"`, `name="budget"`} {
+		assertContains(t, body, field)
+	}
+	assertContains(t, body, `data-close-on-success="true"`)
+
+	invalidEdits := []struct {
+		form url.Values
+		msg  string
+	}{
+		{url.Values{"name": {""}, "category": {"Nursery"}, "qty": {"1"}}, "Give the item a name."},
+		{url.Values{"name": {"Cot"}, "category": {"Nursery"}, "qty": {"many"}}, "Qty must be a whole number greater than zero."},
+		{url.Values{"name": {"Cot"}, "category": {"Nursery"}, "qty": {"1"}, "budget": {"bad"}}, "Budget should be a number."},
+	}
+	for _, invalid := range invalidEdits {
+		rec = doHTMX(t, s, http.MethodPost, "/items/"+itoa(it.ID), invalid.form)
+		assertStatus(t, rec, http.StatusOK)
+		assertContains(t, rec.Body.String(), `id="edit-item-form"`)
+		assertContains(t, rec.Body.String(), invalid.msg)
+	}
+	if got, err := st.Get(context.Background(), it.ID); err != nil || got.Name != "Cot" {
+		t.Fatalf("item after invalid edit = %#v, %v", got, err)
+	}
+
+	rec = do(t, s, http.MethodPost, "/items/"+itoa(it.ID), url.Values{
+		"name": {"Cot mattress"}, "category": {"Travel"}, "qty": {"3"}, "notes": {"firm"}, "budget": {"$1,200"},
+	})
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `id="list"`)
+	assertContains(t, rec.Body.String(), "Cot mattress")
+	assertNotContains(t, rec.Body.String(), `id="workspace"`)
+	updated, err := st.Get(context.Background(), it.ID)
+	if err != nil {
+		t.Fatalf("Get updated item: %v", err)
+	}
+	if updated.Name != "Cot mattress" || updated.Category != "Travel" || updated.Qty != 3 || updated.Notes != "firm" || updated.BudgetText() != "$1,200" {
+		t.Fatalf("updated item = %#v", updated)
+	}
+}
+
+func TestDeleteItemWorkspaceRefreshesList(t *testing.T) {
+	s, st := newServer(t)
+	it := mustAdd(t, st, "Cot", "Nursery")
+
+	rec := do(t, s, http.MethodGet, "/items/"+itoa(it.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `data-close-on-success="true"`)
+
+	rec = do(t, s, http.MethodPost, "/items/"+itoa(it.ID)+"/delete", nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `id="list"`)
+	assertNotContains(t, rec.Body.String(), "Cot")
 }
 
 func TestEditFormAndCancel(t *testing.T) {

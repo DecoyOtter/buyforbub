@@ -129,7 +129,9 @@ func TestBudgetSummariesRefreshAfterMutations(t *testing.T) {
 
 	rec = do(t, s, http.MethodPost, "/items/"+itoa(item.ID)+"/delete", nil)
 	assertStatus(t, rec, http.StatusOK)
-	assertNotContains(t, rec.Body.String(), "budget-total")
+	assertContains(t, rec.Body.String(), `class="budget-total"`)
+	assertContains(t, rec.Body.String(), `<span>Expected total</span><strong>$0</strong>`)
+	assertNotContains(t, rec.Body.String(), "budget-total__counts")
 }
 
 func mustAddBudgetItem(t *testing.T, st *store.Store, input store.ItemInput) store.Item {

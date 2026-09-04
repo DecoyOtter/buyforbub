@@ -1,4 +1,4 @@
-{{define "detail"}}<li id="item-{{.Item.ID}}" class="item is-open{{if .Item.Bought}} is-bought{{end}}">
+{{define "detail"}}<div id="item-{{.Item.ID}}" class="item-workspace is-open{{if .Item.Bought}} is-bought{{end}}">
   <div class="detail">
     <div class="detail__head">
       <button class="item__check" type="button"
@@ -6,14 +6,19 @@
               aria-pressed="{{.Item.Bought}}"
               aria-label="Mark {{.Item.Name}} as {{if .Item.Bought}}still needed{{else}}bought{{end}}"></button>
       <div class="detail__title">
-        <span class="item__name">{{.Item.Name}}</span>
+        <h1 class="item-workspace__title">{{.Item.Name}}</h1>
         {{if gt .Item.Qty 1}}<span class="item__qty">&times;{{.Item.Qty}}</span>{{end}}
-        {{if .Item.Notes}}<span class="item__notes">{{.Item.Notes}}</span>{{end}}
+        <span class="item-workspace__status">{{if .Item.Bought}}Bought{{else}}Needed{{end}}</span>
       </div>
-      <button class="detail__close" type="button"
-              hx-get="/items/{{.Item.ID}}/row" hx-target="#item-{{.Item.ID}}" hx-swap="outerHTML"
-              aria-label="Close {{.Item.Name}}">&times;</button>
     </div>
+
+    <dl class="item-workspace__meta">
+      <div><dt>Category</dt><dd>{{.Item.Category}}</dd></div>
+      <div><dt>Qty</dt><dd>{{.Item.Qty}}</dd></div>
+      <div><dt>Status</dt><dd>{{if .Item.Bought}}Bought{{else}}Needed{{end}}</dd></div>
+      <div><dt>{{if .Item.Bought}}Actual spend{{else}}Budget{{end}}</dt><dd>{{if .Item.Bought}}{{if .ActualCents}}{{.ActualText}}{{else}}Unknown{{end}}{{else if .Item.BudgetCents}}{{.Item.BudgetText}}{{else}}No budget{{end}}</dd></div>
+    </dl>
+    {{if .Item.Notes}}<p class="item-workspace__notes">{{.Item.Notes}}</p>{{end}}
 
     {{if .Editing}}{{template "edit" .}}{{end}}
 
@@ -27,14 +32,26 @@
       {{end}}
 
       <form class="option-add"
-            hx-post="/items/{{.Item.ID}}/options" hx-target="#item-{{.Item.ID}}" hx-swap="outerHTML"
+            hx-post="/items/{{.Item.ID}}/options" hx-target="#workspace-content" hx-swap="innerHTML"
             hx-on::after-request="if (event.detail.successful) { this.reset(); this.querySelector('input[name=url]').focus(); }">
-        <input class="option-add__url" type="text" name="url" placeholder="Paste a link" required
-               autocomplete="off" aria-label="Link">
-        <input class="option-add__label" type="text" name="label" placeholder="Label (optional)"
-               autocomplete="off" aria-label="Label">
-        <input class="option-add__price" type="text" name="price" placeholder="Price"
-               inputmode="decimal" autocomplete="off" aria-label="Price">
+        <label class="option-add__field option-add__field--url{{if index .OptionAdd.Errors "url"}} has-error{{end}}">
+          <span>Shop link</span>
+          <input class="option-add__url" type="text" name="url" value="{{.OptionAdd.URL}}" placeholder="Paste a link" required
+                 autocomplete="off" aria-label="Shop link">
+          {{with index .OptionAdd.Errors "url"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+        </label>
+        <label class="option-add__field option-add__field--label{{if index .OptionAdd.Errors "label"}} has-error{{end}}">
+          <span>Label</span>
+          <input class="option-add__label" type="text" name="label" value="{{.OptionAdd.Label}}" placeholder="Optional"
+                 autocomplete="off" aria-label="Label">
+          {{with index .OptionAdd.Errors "label"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+        </label>
+        <label class="option-add__field option-add__field--price{{if index .OptionAdd.Errors "price"}} has-error{{end}}">
+          <span>Price</span>
+          <input class="option-add__price" type="text" name="price" value="{{.OptionAdd.Price}}" placeholder="Optional"
+                 inputmode="decimal" autocomplete="off" aria-label="Price">
+          {{with index .OptionAdd.Errors "price"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+        </label>
         <button class="option-add__submit" type="submit">Add</button>
       </form>
     </section>
@@ -42,12 +59,12 @@
     {{if not .Editing}}
     <div class="detail__actions">
       <button class="btn btn--quiet" type="button"
-              hx-get="/items/{{.Item.ID}}/edit" hx-target="#item-{{.Item.ID}}" hx-swap="outerHTML">Edit item</button>
+              hx-get="/items/{{.Item.ID}}/edit" hx-target="#workspace-content" hx-swap="innerHTML">Edit item</button>
       <button class="btn btn--danger" type="button"
               hx-post="/items/{{.Item.ID}}/delete" hx-target="#list" hx-swap="outerHTML"
-              hx-confirm="Delete {{.Item.Name}}?">Delete item</button>
+              data-close-on-success="true" data-confirm="Delete {{.Item.Name}}?">Delete item</button>
     </div>
     {{end}}
   </div>
-</li>
+</div>
 {{end}}

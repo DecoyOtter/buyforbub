@@ -1,0 +1,123 @@
+{{define "bundle-detail"}}{{if .Form}}{{template "bundle-form" .Form}}{{else}}
+<article id="bundle-{{.Bundle.ID}}" class="bundle-workspace">
+  <div class="bundle-workspace__hero">
+    <p class="eyebrow">A store package</p>
+    <h1>{{.Bundle.Name}}</h1>
+    {{if .Bundle.Chosen}}<span class="bundle-workspace__status">Chosen</span>{{end}}
+  </div>
+
+  <div class="bundle-workspace__price" aria-label="Bundle price">
+    <strong>{{.Bundle.PriceText}}</strong>
+    <span>Bundle price</span>
+    {{if .Bundle.RegularPriceCents}}<small>Regular {{.Bundle.RegularPriceText}} · Save {{.Bundle.SavingsText}} ({{.Bundle.SavingsPercent}}%)</small>{{end}}
+  </div>
+
+  <a class="bundle-workspace__shop" href="{{.Bundle.URL}}" target="_blank" rel="noopener noreferrer">View at shop</a>
+
+  <section class="bundle-workspace__members" aria-labelledby="bundle-members-title">
+    <div class="bundle-workspace__section-head">
+      <h2 id="bundle-members-title">Includes {{len .Bundle.Members}} Items</h2>
+      <span>Equal shares</span>
+    </div>
+    <ul>
+      {{range .Bundle.Members}}<li>
+        <span><strong>{{.Label}}</strong>{{if ne .Label .ItemName}}<small>{{.ItemName}}</small>{{end}}</span>
+        <strong>{{.ShareText}}</strong>
+      </li>{{end}}
+    </ul>
+  </section>
+
+  <section class="comments comments--bundle bundle-workspace__comments" aria-label="Bundle Comments">
+    <h2 class="comments__title">Bundle Comments</h2>
+    {{range .Bundle.Comments}}<div class="comment">
+      <span class="comment__body">{{.Body}}</span><span class="comment__age">{{.Age}}</span>
+      <button class="comment__remove" type="button" hx-post="/bundle-comments/{{.ID}}/delete"
+              hx-target="#workspace-content" hx-swap="innerHTML" aria-label="Remove Bundle Comment">&times;</button>
+    </div>{{end}}
+    <form class="comment-add" hx-post="/bundles/{{.Bundle.ID}}/comments" hx-target="#workspace-content" hx-swap="innerHTML">
+      <input type="text" name="body" placeholder="Add a Bundle Comment" required autocomplete="off" aria-label="Comment on {{.Bundle.Name}}">
+    </form>
+  </section>
+
+  <div class="bundle-workspace__actions">
+    {{if not .Bundle.Chosen}}<button class="btn btn--primary" type="button"
+            hx-post="/bundles/{{.Bundle.ID}}/choose" hx-target="#list" hx-swap="outerHTML"
+            data-close-on-success="true" data-confirm="{{.Bundle.ChooseConfirm}}">Choose Bundle</button>{{end}}
+    <button class="btn btn--quiet" type="button" hx-get="/bundles/{{.Bundle.ID}}/edit"
+            hx-target="#workspace-content" hx-swap="innerHTML">Edit Bundle</button>
+    <button class="btn btn--danger" type="button"
+            hx-post="/bundles/{{.Bundle.ID}}/delete" hx-target="#list" hx-swap="outerHTML"
+            data-close-on-success="true"
+            data-confirm="Delete {{.Bundle.Name}}? This removes the Bundle Options and their Option Comments for {{.Bundle.AffectedItems}}.">Delete Bundle</button>
+  </div>
+</article>
+{{end}}{{end}}
+
+{{define "bundle-form"}}
+<form id="bundle-form" class="bundle-form" data-bundle-form hx-post="{{.Action}}"{{if .EditConfirm}} data-confirm="{{.EditConfirm}}"{{end}}
+      hx-target="#workspace-content" hx-swap="innerHTML">
+  <div class="bundle-form__heading">
+    <p class="surface__eyebrow">{{if .Editing}}Keep the details current{{else}}A shared store package{{end}}</p>
+    <h1>{{.Heading}}</h1>
+    <p>Pick the Items this Bundle covers. Its price is split between them.</p>
+  </div>
+
+  <div class="bundle-form__details">
+    <label class="surface-form__field{{if index .Errors "name"}} has-error{{end}}">
+      <span>Name</span>
+      <input type="text" name="name" value="{{.Name}}" required autocomplete="off">
+      {{with index .Errors "name"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+    </label>
+    <label class="surface-form__field{{if index .Errors "url"}} has-error{{end}}">
+      <span>Shop URL</span>
+      <input type="url" name="url" value="{{.URL}}" required inputmode="url" autocomplete="off">
+      {{with index .Errors "url"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+    </label>
+    <div class="bundle-form__prices">
+      <label class="surface-form__field{{if index .Errors "price"}} has-error{{end}}">
+        <span>Bundle price</span>
+        <input type="text" name="price" value="{{.Price}}" required inputmode="decimal" autocomplete="off">
+        {{with index .Errors "price"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+      </label>
+      <label class="surface-form__field{{if index .Errors "regular_price"}} has-error{{end}}">
+        <span>Regular price <em>(optional)</em></span>
+        <input type="text" name="regular_price" value="{{.RegularPrice}}" inputmode="decimal" autocomplete="off">
+        {{with index .Errors "regular_price"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+      </label>
+    </div>
+  </div>
+
+  <div class="bundle-form__selection">
+    <div class="bundle-form__selection-head">
+      <div>
+        <h2>Bundle Items</h2>
+        <p>Choose at least two.</p>
+      </div>
+      <output class="bundle-form__share" data-bundle-share aria-live="polite">Choose Items to see their share.</output>
+    </div>
+    <div class="bundle-form__items">
+      {{range .Items}}<fieldset>
+        <legend>{{.Category}}</legend>
+        {{range .Items}}<div class="bundle-form__item{{if .Selected}} is-selected{{end}}">
+          <label>
+            <input type="checkbox" name="item_id" value="{{.ID}}"{{if .Selected}} checked{{end}}>
+            <strong>{{.Name}}</strong>
+            {{if .ChosenOption}}<span>{{.Status}} · {{.ChosenOption}}</span>{{else}}<span>{{.Status}}</span>{{end}}
+          </label>
+          <label class="bundle-form__component">
+            <span>Component label</span>
+            <input type="text" name="component_label_{{.ID}}" value="{{.ComponentLabel}}" placeholder="Optional store name" autocomplete="off">
+          </label>
+        </div>{{end}}
+      </fieldset>{{end}}
+    </div>
+    {{with index .Errors "members"}}<span class="field-error" role="alert">{{.}}</span>{{end}}
+  </div>
+
+</form>
+<div class="bundle-form__actions">
+  <button class="btn btn--primary" type="submit" form="bundle-form">{{.SubmitText}}</button>
+</div>
+{{end}}
+
+{{define "bundle-create"}}{{template "bundle-detail" .Workspace}}{{template "list" .List}}{{end}}

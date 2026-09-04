@@ -75,6 +75,26 @@ func TestAddCommentReturnsOpenPanel(t *testing.T) {
 	assertNotContains(t, body, "<!doctype html>")
 }
 
+func TestAddCommentInvalidHTMXRendersFieldError(t *testing.T) {
+	s, st := newServer(t)
+	it := mustAdd(t, st, "Cot", "Nursery")
+	opt := mustAddOption(t, st, it.ID, store.OptionInput{URL: "https://a.example.com"})
+
+	rec := doHTMX(t, s, http.MethodPost, "/options/"+itoa(opt.ID)+"/comments", url.Values{"body": {"   "}})
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Header().Get("HX-Retarget"), "#workspace-content")
+	assertContains(t, rec.Header().Get("HX-Trigger"), "comment-invalid")
+	assertContains(t, rec.Body.String(), "Write something first.")
+
+	comments, err := st.ListComments(context.Background(), opt.ID)
+	if err != nil {
+		t.Fatalf("ListComments: %v", err)
+	}
+	if len(comments) != 0 {
+		t.Fatalf("invalid comment changed Store: %#v", comments)
+	}
+}
+
 // Comments belong to one option, not to the item.
 func TestCommentsStayOnTheirOption(t *testing.T) {
 	s, st := newServer(t)
@@ -147,6 +167,10 @@ func TestBundleCommentsRenderAndRefreshEveryCopy(t *testing.T) {
 	rec := do(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID)+"/comments", url.Values{"body": {" includes adapter "}})
 	assertStatus(t, rec, http.StatusOK)
 	body := rec.Body.String()
+	assertContains(t, body, `id="list"`)
+
+	rec = do(t, s, http.MethodGet, "/bundles/"+itoa(bundle.ID), nil)
+	body = rec.Body.String()
 	assertContains(t, body, "Bundle Comments")
 	assertContains(t, body, "includes adapter")
 	assertContains(t, body, `hx-post="/bundle-comments/`)
@@ -155,10 +179,10 @@ func TestBundleCommentsRenderAndRefreshEveryCopy(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 	body = rec.Body.String()
 	assertContains(t, body, "Bundle Comments")
-	assertContains(t, body, `aria-label="Comments"`)
+	assertContains(t, body, `aria-label="Item-specific Option Comments"`)
 	assertContains(t, body, "includes adapter")
 	assertContains(t, body, "item-specific")
-	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`/comments" hx-target="#list"`)
+	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`/comments?item_id=`+itoa(cot.ID)+`" hx-target="#workspace-content"`)
 
 	comment, err := st.ListBundleComments(context.Background(), bundle.ID)
 	if err != nil || len(comment) != 1 {
@@ -166,6 +190,8 @@ func TestBundleCommentsRenderAndRefreshEveryCopy(t *testing.T) {
 	}
 	rec = do(t, s, http.MethodPost, "/bundle-comments/"+itoa(comment[0].ID)+"/delete", nil)
 	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `id="list"`)
+	rec = do(t, s, http.MethodGet, "/bundles/"+itoa(bundle.ID), nil)
 	assertNotContains(t, rec.Body.String(), "includes adapter")
 }
 
@@ -188,5 +214,61 @@ func TestBundleCommentFailuresAndEscaping(t *testing.T) {
 	for _, path := range []string{"/bundles/nope/comments", "/bundles/999/comments", "/bundle-comments/nope/delete", "/bundle-comments/999/delete"} {
 		rec := do(t, s, http.MethodPost, path, url.Values{"body": {"hi"}})
 		assertStatus(t, rec, http.StatusNotFound)
+	}
+}
+
+func TestBundleOptionCommentMutationsRenderCurrentItemWorkspace(t *testing.T) {
+	s, st := newServer(t)
+	cot := mustAdd(t, st, "Cot", "Nursery")
+	pram := mustAdd(t, st, "Pram", "Travel")
+	bundle, err := st.AddBundle(context.Background(), store.BundleInput{
+		Name: "Sleep bundle", URL: "https://shop.example/sleep", Price: "100",
+		Members: []store.BundleMemberInput{{ItemID: cot.ID}, {ItemID: pram.ID}},
+	})
+	if err != nil {
+		t.Fatalf("AddBundle: %v", err)
+	}
+	normal := mustAddOption(t, st, pram.ID, store.OptionInput{URL: "https://shop.example/pram", Label: "Pram option"})
+
+	rec := doHTMX(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID)+"/comments?item_id="+itoa(pram.ID), url.Values{"body": {"   "}})
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Header().Get("HX-Retarget"), "#workspace-content")
+	assertContains(t, rec.Body.String(), "Write something first.")
+	assertContains(t, rec.Body.String(), `id="item-`+itoa(pram.ID)+`"`)
+
+	rec = doHTMX(t, s, http.MethodPost, "/bundles/"+itoa(bundle.ID)+"/comments?item_id="+itoa(pram.ID), url.Values{"body": {"shared adapter"}})
+	assertStatus(t, rec, http.StatusOK)
+	body := rec.Body.String()
+	assertContains(t, body, `id="item-`+itoa(pram.ID)+`"`)
+	assertNotContains(t, body, `id="list"`)
+	assertContains(t, body, "Bundle Comments")
+	assertContains(t, body, "shared adapter")
+	assertContains(t, body, "Item-specific Option Comments")
+	assertContains(t, body, "Pram option")
+	assertContains(t, body, `hx-post="/bundles/`+itoa(bundle.ID)+`/comments?item_id=`+itoa(pram.ID)+`"`)
+
+	optionComment := mustAddComment(t, st, normal.ID, "fits the boot")
+	rec = do(t, s, http.MethodPost, "/comments/"+itoa(optionComment.ID)+"/delete", nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `id="item-`+itoa(pram.ID)+`"`)
+	assertNotContains(t, rec.Body.String(), "fits the boot")
+
+	bundleComments, err := st.ListBundleComments(context.Background(), bundle.ID)
+	if err != nil || len(bundleComments) != 1 {
+		t.Fatalf("ListBundleComments = %#v, %v", bundleComments, err)
+	}
+	rec = do(t, s, http.MethodPost, "/bundle-comments/"+itoa(bundleComments[0].ID)+"/delete?item_id="+itoa(pram.ID), nil)
+	assertStatus(t, rec, http.StatusOK)
+	assertContains(t, rec.Body.String(), `id="item-`+itoa(pram.ID)+`"`)
+	assertNotContains(t, rec.Body.String(), "shared adapter")
+	assertNotContains(t, rec.Body.String(), `id="list"`)
+
+	remaining, err := st.ListComments(context.Background(), normal.ID)
+	if err != nil || len(remaining) != 0 {
+		t.Fatalf("normal comments = %#v, %v", remaining, err)
+	}
+	bundleComments, err = st.ListBundleComments(context.Background(), bundle.ID)
+	if err != nil || len(bundleComments) != 0 {
+		t.Fatalf("bundle comments = %#v, %v", bundleComments, err)
 	}
 }

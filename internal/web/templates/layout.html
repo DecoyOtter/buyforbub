@@ -4,8 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{.Title}}</title>
-<meta name="theme-color" content="#f7f5f2" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#17191a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fff8eb">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/icon-180.png">
@@ -16,23 +15,54 @@
 </head>
 <body>
 <header class="header">
-  <h1 class="header__title">{{.Title}}</h1>
+  <a class="header__brand" href="/" aria-label="{{.Title}} home">buy for <strong>bub</strong><i></i></a>
+  <p class="header__hello"><span>Getting ready for</span><strong>your little one</strong></p>
 </header>
 
 <main class="main">
-  <form class="add" hx-post="/items" hx-target="#list" hx-swap="outerHTML"
-        hx-on::after-request="if (event.detail.successful) { this.reset(); this.querySelector('input[name=name]').focus(); }">
-    <input class="add__name" type="text" name="name" placeholder="Add an item" required
-           autocomplete="off" aria-label="Item name">
-    <select class="add__category" name="category" aria-label="Category">
-      {{range .Categories}}<option value="{{.}}">{{.}}</option>{{end}}
-    </select>
-    <input class="add__qty" type="number" name="qty" value="1" min="1" step="1" aria-label="Quantity">
-    <button class="add__submit" type="submit">Add</button>
-  </form>
-
   {{template "list" .List}}
 </main>
+
+<div class="surface-backdrop" data-surface-backdrop hidden></div>
+
+<aside id="add-item-sheet" class="surface surface--sheet" aria-labelledby="add-item-title"
+       aria-modal="true" role="dialog" hidden tabindex="-1">
+  <div class="surface__head">
+    <div>
+      <p class="surface__eyebrow">New on the list</p>
+      <h2 id="add-item-title">Add an Item</h2>
+    </div>
+    <button class="surface__close" type="button" data-close-surface aria-label="Close Add Item">&times;</button>
+  </div>
+  <div id="add-item-sheet-content" class="surface__content">{{template "add-item" .AddItem}}</div>
+</aside>
+
+<aside id="workspace" class="surface surface--workspace" aria-labelledby="workspace-title"
+       aria-modal="true" role="dialog" hidden tabindex="-1">
+  <div class="surface__head">
+    <div>
+      <p class="surface__eyebrow">Focused view</p>
+      <h2 id="workspace-title">Workspace</h2>
+    </div>
+    <button class="surface__close" type="button" data-close-surface aria-label="Close workspace">&times;</button>
+  </div>
+  <div id="workspace-content" class="surface__content" aria-live="polite"></div>
+</aside>
+
+<dialog id="confirmation-dialog" class="confirmation-dialog" aria-labelledby="confirmation-dialog-title"
+        aria-describedby="confirmation-dialog-message" hidden>
+  <form method="dialog" class="confirmation-dialog__form">
+    <p class="surface__eyebrow">Please confirm</p>
+    <h2 id="confirmation-dialog-title">Are you sure?</h2>
+    <p id="confirmation-dialog-message"></p>
+    <div class="confirmation-dialog__actions">
+      <button class="btn" type="button" data-confirm-cancel>Cancel</button>
+      <button class="btn btn--primary" type="button" data-confirm-accept>Confirm</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/static/controller.js" defer></script>
 </body>
 </html>
 {{end}}

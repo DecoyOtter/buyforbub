@@ -61,6 +61,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.Serve
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
+	s.mux.HandleFunc("GET /bundles/new", s.handleNewBundle)
+	s.mux.HandleFunc("GET /bundles/{bid}", s.handleBundleDetail)
+	s.mux.HandleFunc("GET /bundles/{bid}/edit", s.handleBundleEdit)
 	s.mux.HandleFunc("POST /items", s.handleAdd)
 	s.mux.HandleFunc("POST /bundles", s.handleAddBundle)
 	s.mux.HandleFunc("POST /bundles/{bid}", s.handleUpdateBundle)
@@ -88,16 +91,27 @@ func (s *Server) routes() {
 type pageData struct {
 	Title      string
 	Categories []string
+	AddItem    addItemData
 	List       listData
 }
 
+type addItemData struct {
+	Name       string
+	Category   string
+	Qty        string
+	Categories []string
+	Errors     map[string]string
+}
+
 type listData struct {
+	Categories  []string
 	Groups      []groupData
 	Bundles     []bundleData
 	BundleItems []bundleItemGroupData
 	Overall     store.BudgetSummary
 	Done        int
 	Total       int
+	OOB         bool
 }
 
 type groupData struct {
@@ -119,6 +133,50 @@ type bundleData struct {
 	Chosen        bool
 	AffectedItems string
 	ChooseConfirm string
+}
+
+type bundleWorkspaceData struct {
+	Bundle *bundleData
+	Form   *bundleFormData
+}
+
+type bundleCreateData struct {
+	Workspace bundleWorkspaceData
+	List      listData
+}
+
+type bundleFormData struct {
+	ID           int64
+	Editing      bool
+	EditConfirm  string
+	Name         string
+	URL          string
+	Price        string
+	RegularPrice string
+	Items        []bundleItemGroupData
+	Selected     int
+	Errors       map[string]string
+}
+
+func (f bundleFormData) Action() string {
+	if f.Editing {
+		return "/bundles/" + strconv.FormatInt(f.ID, 10)
+	}
+	return "/bundles"
+}
+
+func (f bundleFormData) Heading() string {
+	if f.Editing {
+		return "Edit Bundle"
+	}
+	return "Add a Bundle"
+}
+
+func (f bundleFormData) SubmitText() string {
+	if f.Editing {
+		return "Save Bundle"
+	}
+	return "Create Bundle"
 }
 
 func (b bundleData) PriceText() string { return store.FormatMoney(b.PriceCents) }
@@ -158,6 +216,7 @@ func (b bundleData) SavingsPercent() int64 {
 }
 
 type bundleMemberData struct {
+	ItemID         int64
 	ItemName       string
 	ComponentLabel string
 	ShareCents     int64
@@ -195,10 +254,36 @@ func (i itemData) ActualText() string {
 
 // detailData backs the expanded panel, and the edit form nested inside it.
 type detailData struct {
-	Item       store.Item
-	Options    []optionView
-	Categories []string
-	Editing    bool
+	Item        store.Item
+	ActualCents *int64
+	Options     []optionView
+	OptionAdd   optionFormData
+	Categories  []string
+	Editing     bool
+	Edit        editItemData
+}
+
+type optionFormData struct {
+	URL    string
+	Label  string
+	Price  string
+	Errors map[string]string
+}
+
+type editItemData struct {
+	Name     string
+	Qty      string
+	Category string
+	Notes    string
+	Budget   string
+	Errors   map[string]string
+}
+
+func (d detailData) ActualText() string {
+	if d.ActualCents == nil {
+		return ""
+	}
+	return store.FormatMoney(*d.ActualCents)
 }
 
 // optionView is an option with its comments attached, since the store returns
@@ -208,17 +293,23 @@ type optionView struct {
 	Comments      []store.Comment
 	Bundle        *bundleOptionData
 	ChooseConfirm string
+	CommentBody   string
+	CommentError  string
 }
 
 type bundleOptionData struct {
 	BundleID       int64
 	BundleName     string
+	AffectedItems  string
+	ItemID         int64
 	ComponentLabel string
 	ItemName       string
 	PriceCents     int64
 	BundlePrice    int64
 	ChooseConfirm  string
 	Comments       []store.BundleComment
+	CommentBody    string
+	CommentError   string
 }
 
 func (b bundleOptionData) Label() string {
@@ -241,34 +332,74 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "page", pageData{
 		Title:      s.title,
 		Categories: store.Categories,
+		AddItem:    newAddItemData("", "", "1", nil),
 		List:       list,
 	})
 }
 
 func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
-	in, err := parseItemInput(r)
+	in, form, err := parseAddItemInput(r)
 	if err != nil {
-		s.fail(w, r, err)
+		s.renderAddError(w, r, form, err)
 		return
 	}
 	if _, err := s.store.Add(r.Context(), in); err != nil {
-		s.fail(w, r, err)
+		s.renderAddError(w, r, form, err)
 		return
 	}
 	s.renderList(w, r)
 }
 
 func (s *Server) handleAddBundle(w http.ResponseWriter, r *http.Request) {
-	in, err := parseBundleInput(r)
+	in, form, err := parseBundleInput(r)
+	if err != nil {
+		s.renderBundleError(w, r, 0, form, in, err)
+		return
+	}
+	bundle, err := s.store.AddBundle(r.Context(), in)
+	if err != nil {
+		s.renderBundleError(w, r, 0, form, in, err)
+		return
+	}
+	s.renderBundleCreateResult(w, r, bundle.ID)
+}
+
+func (s *Server) handleNewBundle(w http.ResponseWriter, r *http.Request) {
+	list, err := s.listData(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if _, err := s.store.AddBundle(r.Context(), in); err != nil {
+	form := newBundleFormData(list)
+	s.render(w, r, http.StatusOK, "bundle-detail", bundleWorkspaceData{Form: &form})
+}
+
+func (s *Server) handleBundleDetail(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	s.renderBundleWorkspace(w, r, id)
+}
+
+func (s *Server) handleBundleEdit(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	list, err := s.listData(r.Context())
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	s.renderList(w, r)
+	for i := range list.Bundles {
+		if list.Bundles[i].ID == id {
+			form := bundleFormForBundle(list, list.Bundles[i])
+			s.render(w, r, http.StatusOK, "bundle-detail", bundleWorkspaceData{Form: &form})
+			return
+		}
+	}
+	s.fail(w, r, store.ErrNotFound)
 }
 
 func (s *Server) handleUpdateBundle(w http.ResponseWriter, r *http.Request) {
@@ -280,16 +411,16 @@ func (s *Server) handleUpdateBundle(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	in, err := parseBundleInput(r)
+	in, form, err := parseBundleInput(r)
 	if err != nil {
-		s.fail(w, r, err)
+		s.renderBundleError(w, r, id, form, in, err)
 		return
 	}
 	if _, err := s.store.UpdateBundle(r.Context(), id, in); err != nil {
-		s.fail(w, r, err)
+		s.renderBundleError(w, r, id, form, in, err)
 		return
 	}
-	s.renderList(w, r)
+	s.renderBundleWorkspace(w, r, id)
 }
 
 func (s *Server) handleDeleteBundle(w http.ResponseWriter, r *http.Request) {
@@ -321,12 +452,39 @@ func (s *Server) handleAddBundleComment(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	itemID, inWorkspace, err := s.bundleCommentItemID(r.Context(), r, id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		s.fail(w, r, errBadRequest)
 		return
 	}
 	if _, err := s.store.AddBundleComment(r.Context(), id, r.PostFormValue("body")); err != nil {
+		if inWorkspace && isHTMX(r) && errors.Is(err, store.ErrInvalidComment) {
+			data, dataErr := s.detailData(r.Context(), itemID, false)
+			if dataErr != nil {
+				s.fail(w, r, dataErr)
+				return
+			}
+			for i := range data.Options {
+				if data.Options[i].Bundle != nil && data.Options[i].Bundle.BundleID == id {
+					data.Options[i].Bundle.CommentBody = r.PostFormValue("body")
+					data.Options[i].Bundle.CommentError = "Write something first."
+				}
+			}
+			w.Header().Set("HX-Retarget", "#workspace-content")
+			w.Header().Set("HX-Reswap", "innerHTML")
+			w.Header().Set("HX-Trigger", "bundle-comment-invalid")
+			s.render(w, r, http.StatusOK, "detail", data)
+			return
+		}
 		s.fail(w, r, err)
+		return
+	}
+	if inWorkspace {
+		s.renderDetail(w, r, itemID, false)
 		return
 	}
 	s.renderList(w, r)
@@ -337,11 +495,46 @@ func (s *Server) handleDeleteBundleComment(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+	comment, err := s.store.GetBundleComment(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	itemID, inWorkspace, err := s.bundleCommentItemID(r.Context(), r, comment.BundleID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	if err := s.store.DeleteBundleComment(r.Context(), id); err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	if inWorkspace {
+		s.renderDetail(w, r, itemID, false)
+		return
+	}
 	s.renderList(w, r)
+}
+
+func (s *Server) bundleCommentItemID(ctx context.Context, r *http.Request, bundleID int64) (int64, bool, error) {
+	rawID := r.URL.Query().Get("item_id")
+	if rawID == "" {
+		return 0, false, nil
+	}
+	itemID, err := strconv.ParseInt(rawID, 10, 64)
+	if err != nil || itemID <= 0 {
+		return 0, true, errBadRequest
+	}
+	bundle, err := s.store.GetBundle(ctx, bundleID)
+	if err != nil {
+		return 0, true, err
+	}
+	for _, member := range bundle.Members {
+		if member.ItemID == itemID {
+			return itemID, true, nil
+		}
+	}
+	return 0, true, store.ErrNotFound
 }
 
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
@@ -349,13 +542,17 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	in, err := parseItemInput(r)
+	in, form, err := parseEditItemInput(r)
 	if err != nil {
-		s.fail(w, r, err)
+		s.renderEditError(w, r, id, form, err)
 		return
 	}
 	if _, err := s.store.Update(r.Context(), id, in); err != nil {
-		s.fail(w, r, err)
+		if len(editItemFieldErrors(err)) == 0 {
+			s.fail(w, r, err)
+			return
+		}
+		s.renderEditError(w, r, id, form, err)
 		return
 	}
 	// The category may have changed, so the whole list is re-rendered.
@@ -431,12 +628,23 @@ func (s *Server) handleAddOption(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, errBadRequest)
 		return
 	}
-	_, err := s.store.AddOption(r.Context(), id, store.OptionInput{
-		URL:   r.PostFormValue("url"),
-		Label: r.PostFormValue("label"),
-		Price: r.PostFormValue("price"),
-	})
+	form := optionFormData{URL: r.PostFormValue("url"), Label: r.PostFormValue("label"), Price: r.PostFormValue("price")}
+	_, err := s.store.AddOption(r.Context(), id, store.OptionInput{URL: form.URL, Label: form.Label, Price: form.Price})
 	if err != nil {
+		if isHTMX(r) && len(optionFieldErrors(err)) > 0 {
+			data, dataErr := s.detailData(r.Context(), id, false)
+			if dataErr != nil {
+				s.fail(w, r, dataErr)
+				return
+			}
+			form.Errors = optionFieldErrors(err)
+			data.OptionAdd = form
+			w.Header().Set("HX-Retarget", "#workspace-content")
+			w.Header().Set("HX-Reswap", "innerHTML")
+			w.Header().Set("HX-Trigger", "option-invalid")
+			s.render(w, r, http.StatusOK, "detail", data)
+			return
+		}
 		s.fail(w, r, err)
 		return
 	}
@@ -488,8 +696,33 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, errBadRequest)
 		return
 	}
-	c, err := s.store.AddComment(r.Context(), id, r.PostFormValue("body"))
+	body := r.PostFormValue("body")
+	c, err := s.store.AddComment(r.Context(), id, body)
 	if err != nil {
+		if isHTMX(r) && errors.Is(err, store.ErrInvalidComment) {
+			opt, getErr := s.store.GetOption(r.Context(), id)
+			if getErr != nil {
+				s.fail(w, r, getErr)
+				return
+			}
+			data, dataErr := s.detailData(r.Context(), opt.ItemID, false)
+			if dataErr != nil {
+				s.fail(w, r, dataErr)
+				return
+			}
+			for i := range data.Options {
+				if data.Options[i].ID == id {
+					data.Options[i].CommentBody = body
+					data.Options[i].CommentError = "Write something first."
+					break
+				}
+			}
+			w.Header().Set("HX-Retarget", "#workspace-content")
+			w.Header().Set("HX-Reswap", "innerHTML")
+			w.Header().Set("HX-Trigger", "comment-invalid")
+			s.render(w, r, http.StatusOK, "detail", data)
+			return
+		}
 		s.fail(w, r, err)
 		return
 	}
@@ -581,7 +814,7 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 				return listData{}, fmt.Errorf("bundle %d has incomplete member %d", bundle.ID, member.ID)
 			}
 			view.Members = append(view.Members, bundleMemberData{
-				ItemName: item.Name, ComponentLabel: member.ComponentLabel, ShareCents: *option.PriceCents,
+				ItemID: member.ItemID, ItemName: item.Name, ComponentLabel: member.ComponentLabel, ShareCents: *option.PriceCents,
 			})
 			membersByItem[member.ItemID] = store.BundleMemberInput{ComponentLabel: member.ComponentLabel}
 			affectedNames = append(affectedNames, item.Name)
@@ -604,7 +837,7 @@ func (s *Server) listData(ctx context.Context) (listData, error) {
 		data = append(data, view)
 	}
 	bundleItemGroups := bundleItemsForGroups(groups, chosenOptionNames, nil)
-	return listData{Groups: data, Bundles: bundleViews, BundleItems: bundleItemGroups, Overall: summaries.Overall, Done: done, Total: total}, nil
+	return listData{Categories: store.Categories, Groups: data, Bundles: bundleViews, BundleItems: bundleItemGroups, Overall: summaries.Overall, Done: done, Total: total}, nil
 }
 
 func bundleItemsForGroups(groups []store.CategoryGroup, chosen map[int64]string, members map[int64]store.BundleMemberInput) []bundleItemGroupData {
@@ -644,38 +877,184 @@ func newItemData(item store.Item, chosenPrices map[int64]*int64) itemData {
 }
 
 func (s *Server) renderDetail(w http.ResponseWriter, r *http.Request, id int64, editing bool) {
-	item, err := s.store.Get(r.Context(), id)
+	data, err := s.detailData(r.Context(), id, editing)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	opts, err := s.store.ListOptions(r.Context(), id)
+	s.render(w, r, http.StatusOK, "detail", data)
+}
+
+func (s *Server) renderBundleWorkspace(w http.ResponseWriter, r *http.Request, id int64) {
+	list, err := s.listData(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	comments, err := s.store.CommentsByOption(r.Context(), id)
+	for _, bundle := range list.Bundles {
+		if bundle.ID == id {
+			s.render(w, r, http.StatusOK, "bundle-detail", bundleWorkspaceData{Bundle: &bundle})
+			return
+		}
+	}
+	s.fail(w, r, store.ErrNotFound)
+}
+
+func (s *Server) renderBundleCreateResult(w http.ResponseWriter, r *http.Request, id int64) {
+	list, err := s.listData(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	for _, bundle := range list.Bundles {
+		if bundle.ID == id {
+			if !isHTMX(r) {
+				s.render(w, r, http.StatusOK, "bundle-detail", bundleWorkspaceData{Bundle: &bundle})
+				return
+			}
+			list.OOB = true
+			s.render(w, r, http.StatusOK, "bundle-create", bundleCreateData{
+				Workspace: bundleWorkspaceData{Bundle: &bundle},
+				List:      list,
+			})
+			return
+		}
+	}
+	s.fail(w, r, store.ErrNotFound)
+}
+
+func newBundleFormData(list listData) bundleFormData {
+	return bundleFormData{Items: list.BundleItems, Errors: map[string]string{}}
+}
+
+func bundleFormForBundle(list listData, bundle bundleData) bundleFormData {
+	members := make(map[int64]store.BundleMemberInput, len(bundle.Members))
+	for _, member := range bundle.Members {
+		members[member.ItemID] = store.BundleMemberInput{ItemID: member.ItemID, ComponentLabel: member.ComponentLabel}
+	}
+	return bundleFormData{
+		ID: bundle.ID, Editing: true, EditConfirm: bundleEditConfirm(bundle), Name: bundle.Name, URL: bundle.URL,
+		Price: bundle.PriceInput(), RegularPrice: bundle.RegularPriceInput(),
+		Items:    bundleItemsForGroups(groupsFromList(list), nil, members),
+		Selected: len(members), Errors: map[string]string{},
+	}
+}
+
+func groupsFromList(list listData) []store.CategoryGroup {
+	groups := make([]store.CategoryGroup, 0, len(list.Groups))
+	for _, group := range list.Groups {
+		items := make([]store.Item, 0, len(group.Items))
+		for _, item := range group.Items {
+			items = append(items, item.Item)
+		}
+		groups = append(groups, store.CategoryGroup{Category: group.Category, Items: items})
+	}
+	return groups
+}
+
+func bundleFormForInput(list listData, id int64, editing bool, in store.BundleInput, err error) bundleFormData {
+	members := make(map[int64]store.BundleMemberInput, len(in.Members))
+	for _, member := range in.Members {
+		members[member.ItemID] = member
+	}
+	form := bundleFormData{
+		ID: id, Editing: editing, Name: in.Name, URL: in.URL, Price: in.Price,
+		RegularPrice: in.RegularPrice,
+		Items:        bundleItemsForGroups(groupsFromList(list), nil, members),
+		Selected:     len(members), Errors: bundleFieldErrors(err, in),
+	}
+	for _, bundle := range list.Bundles {
+		if bundle.ID == id {
+			form.EditConfirm = bundleEditConfirm(bundle)
+			break
+		}
+	}
+	return form
+}
+
+func bundleEditConfirm(bundle bundleData) string {
+	if !bundle.Chosen {
+		return ""
+	}
+	return "Saving will unchoose this Bundle and mark " + bundle.AffectedItems + " needed. Continue?"
+}
+
+func (s *Server) renderBundleError(w http.ResponseWriter, r *http.Request, id int64, parsed bundleFormData, in store.BundleInput, err error) {
+	if !isHTMX(r) {
+		s.fail(w, r, err)
+		return
+	}
+	list, listErr := s.listData(r.Context())
+	if listErr != nil {
+		s.fail(w, r, listErr)
+		return
+	}
+	form := bundleFormForInput(list, id, id != 0, in, err)
+	form.Name, form.URL, form.Price, form.RegularPrice = parsed.Name, parsed.URL, parsed.Price, parsed.RegularPrice
+	w.Header().Set("HX-Retarget", "#workspace-content")
+	w.Header().Set("HX-Reswap", "innerHTML")
+	w.Header().Set("HX-Trigger", "bundle-invalid")
+	s.render(w, r, http.StatusOK, "bundle-form", form)
+}
+
+func (s *Server) detailData(ctx context.Context, id int64, editing bool) (detailData, error) {
+	item, err := s.store.Get(ctx, id)
+	if err != nil {
+		return detailData{}, err
+	}
+	opts, err := s.store.ListOptions(ctx, id)
+	if err != nil {
+		return detailData{}, err
+	}
+	comments, err := s.store.CommentsByOption(ctx, id)
+	if err != nil {
+		return detailData{}, err
 	}
 
-	bundleOptions, normalConfirms, err := s.bundleOptionData(r.Context())
+	bundleOptions, normalConfirms, err := s.bundleOptionData(ctx)
 	if err != nil {
-		s.fail(w, r, err)
-		return
+		return detailData{}, err
 	}
 	views := make([]optionView, 0, len(opts))
 	for _, o := range opts {
 		bundle := bundleOptions[o.ID]
 		views = append(views, optionView{Option: o, Comments: comments[o.ID], Bundle: bundle, ChooseConfirm: normalConfirms[o.ItemID]})
 	}
-	s.render(w, r, http.StatusOK, "detail", detailData{
-		Item:       item,
-		Options:    views,
-		Categories: store.Categories,
-		Editing:    editing,
-	})
+	prices, err := s.store.ChosenOptionPrices(ctx)
+	if err != nil {
+		return detailData{}, err
+	}
+	return detailData{
+		Item:        item,
+		ActualCents: prices[id],
+		Options:     views,
+		OptionAdd:   newOptionFormData("", "", "", nil),
+		Categories:  store.Categories,
+		Editing:     editing,
+		Edit:        newEditItemData(item),
+	}, nil
+}
+
+func newOptionFormData(url, label, price string, fieldErrors map[string]string) optionFormData {
+	return optionFormData{URL: url, Label: label, Price: price, Errors: fieldErrors}
+}
+
+func optionFieldErrors(err error) map[string]string {
+	errorsByField := make(map[string]string)
+	switch {
+	case errors.Is(err, store.ErrInvalidURL):
+		errorsByField["url"] = "That does not look like a link."
+	case errors.Is(err, store.ErrInvalidPrice):
+		errorsByField["price"] = "Price should be a number."
+	}
+	return errorsByField
+}
+
+func newEditItemData(item store.Item) editItemData {
+	return editItemData{
+		Name: item.Name, Qty: strconv.Itoa(item.Qty), Category: item.Category,
+		Notes: item.Notes, Budget: item.BudgetText(), Errors: map[string]string{},
+	}
 }
 
 func (s *Server) bundleOptionData(ctx context.Context) (map[int64]*bundleOptionData, map[int64]string, error) {
@@ -699,6 +1078,10 @@ func (s *Server) bundleOptionData(ctx context.Context) (map[int64]*bundleOptionD
 			return nil, nil, err
 		}
 		confirm := bundleChooseConfirm(bundle, bundles, itemsByID, s.store, ctx)
+		affectedNames := make([]string, 0, len(bundle.Members))
+		for _, member := range bundle.Members {
+			affectedNames = append(affectedNames, itemsByID[member.ItemID].Name)
+		}
 		chosen := false
 		for _, member := range bundle.Members {
 			option, err := s.store.GetOption(ctx, member.OptionID)
@@ -710,7 +1093,7 @@ func (s *Server) bundleOptionData(ctx context.Context) (map[int64]*bundleOptionD
 			if option.PriceCents == nil {
 				return nil, nil, fmt.Errorf("bundle %d has incomplete member", bundle.ID)
 			}
-			result[option.ID] = &bundleOptionData{BundleID: bundle.ID, BundleName: bundle.Name, ComponentLabel: member.ComponentLabel, ItemName: item.Name, PriceCents: *option.PriceCents, BundlePrice: bundle.PriceCents, ChooseConfirm: confirm, Comments: comments}
+			result[option.ID] = &bundleOptionData{BundleID: bundle.ID, BundleName: bundle.Name, AffectedItems: joinNames(affectedNames), ItemID: member.ItemID, ComponentLabel: member.ComponentLabel, ItemName: item.Name, PriceCents: *option.PriceCents, BundlePrice: bundle.PriceCents, ChooseConfirm: confirm, Comments: comments}
 		}
 		if chosen {
 			affected := make([]string, 0, len(bundle.Members))
@@ -719,6 +1102,21 @@ func (s *Server) bundleOptionData(ctx context.Context) (map[int64]*bundleOptionD
 			}
 			for _, member := range bundle.Members {
 				normalConfirms[member.ItemID] = "Choosing this Option will unchoose " + bundle.Name + " and mark " + joinNames(affected) + " needed. Continue?"
+			}
+		}
+	}
+	for _, item := range items {
+		if _, alreadyConfirmed := normalConfirms[item.ID]; alreadyConfirmed {
+			continue
+		}
+		options, err := s.store.ListOptions(ctx, item.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, option := range options {
+			if option.Chosen {
+				normalConfirms[item.ID] = "Choosing this Option will replace " + option.Title() + ". Continue?"
+				break
 			}
 		}
 	}
@@ -793,31 +1191,127 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 	buf.WriteTo(w)
 }
 
-func parseItemInput(r *http.Request) (store.ItemInput, error) {
-	if err := r.ParseForm(); err != nil {
-		return store.ItemInput{}, fmt.Errorf("%w: malformed form", errBadRequest)
+func (s *Server) renderEditError(w http.ResponseWriter, r *http.Request, id int64, form editItemData, err error) {
+	if !isHTMX(r) {
+		s.fail(w, r, err)
+		return
 	}
-	// An absent or unparseable qty falls through as 0, which the store
-	// normalises to 1.
-	qty, _ := strconv.Atoi(r.PostFormValue("qty"))
+	data, dataErr := s.detailData(r.Context(), id, true)
+	if dataErr != nil {
+		s.fail(w, r, dataErr)
+		return
+	}
+	form.Errors = editItemFieldErrors(err)
+	data.Edit = form
+	w.Header().Set("HX-Retarget", "#workspace-content")
+	w.Header().Set("HX-Reswap", "innerHTML")
+	w.Header().Set("HX-Trigger", "item-invalid")
+	s.render(w, r, http.StatusOK, "detail", data)
+}
+
+func editItemFieldErrors(err error) map[string]string {
+	errorsByField := make(map[string]string)
+	switch {
+	case errors.Is(err, store.ErrInvalidName):
+		errorsByField["name"] = "Give the item a name."
+	case errors.Is(err, store.ErrInvalidCategory):
+		errorsByField["category"] = "Pick a category."
+	case errors.Is(err, errInvalidQty):
+		errorsByField["qty"] = "Qty must be a whole number greater than zero."
+	case errors.Is(err, store.ErrInvalidBudget):
+		errorsByField["budget"] = "Budget should be a number."
+	}
+	return errorsByField
+}
+
+func parseEditItemInput(r *http.Request) (store.ItemInput, editItemData, error) {
+	if err := r.ParseForm(); err != nil {
+		return store.ItemInput{}, editItemData{}, fmt.Errorf("%w: malformed form", errBadRequest)
+	}
+	qtyText := strings.TrimSpace(r.PostFormValue("qty"))
+	if qtyText == "" {
+		qtyText = "1"
+	}
+	qty, err := strconv.Atoi(qtyText)
+	form := editItemData{
+		Name: r.PostFormValue("name"), Qty: qtyText, Category: r.PostFormValue("category"),
+		Notes: r.PostFormValue("notes"), Budget: r.PostFormValue("budget"), Errors: map[string]string{},
+	}
+	if err != nil || qty < 1 {
+		return store.ItemInput{Name: form.Name, Category: form.Category, Notes: form.Notes, Budget: form.Budget}, form, errInvalidQty
+	}
+	return store.ItemInput{
+		Name: form.Name, Qty: qty, Category: form.Category, Notes: form.Notes, Budget: form.Budget,
+	}, form, nil
+}
+
+var errInvalidQty = errors.New("invalid quantity")
+
+func parseAddItemInput(r *http.Request) (store.ItemInput, addItemData, error) {
+	if err := r.ParseForm(); err != nil {
+		return store.ItemInput{}, newAddItemData("", "", "", nil), fmt.Errorf("%w: malformed form", errBadRequest)
+	}
+	qtyText := strings.TrimSpace(r.PostFormValue("qty"))
+	if qtyText == "" {
+		qtyText = "1"
+	}
+	qty, err := strconv.Atoi(qtyText)
+	if err != nil || qty < 1 {
+		return store.ItemInput{Name: r.PostFormValue("name"), Category: r.PostFormValue("category")}, newAddItemData(r.PostFormValue("name"), r.PostFormValue("category"), qtyText, nil), errInvalidQty
+	}
 	return store.ItemInput{
 		Name:     r.PostFormValue("name"),
 		Qty:      qty,
 		Category: r.PostFormValue("category"),
-		Notes:    r.PostFormValue("notes"),
-		Budget:   r.PostFormValue("budget"),
-	}, nil
+	}, newAddItemData(r.PostFormValue("name"), r.PostFormValue("category"), qtyText, nil), nil
 }
 
-func parseBundleInput(r *http.Request) (store.BundleInput, error) {
+func newAddItemData(name, category, qty string, fieldErrors map[string]string) addItemData {
+	return addItemData{Name: name, Category: category, Qty: qty, Categories: store.Categories, Errors: fieldErrors}
+}
+
+func (s *Server) renderAddError(w http.ResponseWriter, r *http.Request, form addItemData, err error) {
+	if !isHTMX(r) {
+		s.fail(w, r, err)
+		return
+	}
+	form.Errors = addItemFieldErrors(err)
+	w.Header().Set("HX-Retarget", "#add-item-sheet-content")
+	w.Header().Set("HX-Reswap", "innerHTML")
+	w.Header().Set("HX-Trigger", "add-item-invalid")
+	s.render(w, r, http.StatusOK, "add-item", form)
+}
+
+func addItemFieldErrors(err error) map[string]string {
+	errorsByField := make(map[string]string)
+	switch {
+	case errors.Is(err, store.ErrInvalidName):
+		errorsByField["name"] = "Give the item a name."
+	case errors.Is(err, store.ErrInvalidCategory):
+		errorsByField["category"] = "Pick a category."
+	case errors.Is(err, errInvalidQty):
+		errorsByField["qty"] = "Qty must be a whole number greater than zero."
+	}
+	return errorsByField
+}
+
+func isHTMX(r *http.Request) bool { return r.Header.Get("HX-Request") == "true" }
+
+func parseBundleInput(r *http.Request) (store.BundleInput, bundleFormData, error) {
 	if err := r.ParseForm(); err != nil {
-		return store.BundleInput{}, fmt.Errorf("%w: malformed form", errBadRequest)
+		return store.BundleInput{}, bundleFormData{}, fmt.Errorf("%w: malformed form", errBadRequest)
+	}
+	form := bundleFormData{
+		Name: r.PostFormValue("name"), URL: r.PostFormValue("url"), Price: r.PostFormValue("price"),
+		RegularPrice: r.PostFormValue("regular_price"), Errors: map[string]string{},
 	}
 	members := make([]store.BundleMemberInput, 0, len(r.PostForm["item_id"]))
 	for _, rawID := range r.PostForm["item_id"] {
 		id, err := strconv.ParseInt(rawID, 10, 64)
 		if err != nil {
-			return store.BundleInput{}, store.ErrInvalidBundleMembership
+			return store.BundleInput{
+				Name: form.Name, URL: form.URL, Price: form.Price, RegularPrice: form.RegularPrice,
+			}, form, store.ErrInvalidBundleMembership
 		}
 		members = append(members, store.BundleMemberInput{
 			ItemID:         id,
@@ -830,7 +1324,39 @@ func parseBundleInput(r *http.Request) (store.BundleInput, error) {
 		Price:        r.PostFormValue("price"),
 		RegularPrice: r.PostFormValue("regular_price"),
 		Members:      members,
-	}, nil
+	}, form, nil
+}
+
+func bundleFieldErrors(err error, in store.BundleInput) map[string]string {
+	errorsByField := make(map[string]string)
+	switch {
+	case errors.Is(err, store.ErrInvalidBundleName):
+		errorsByField["name"] = "Give the bundle a name."
+	case errors.Is(err, store.ErrInvalidURL):
+		errorsByField["url"] = "That does not look like a link."
+	case errors.Is(err, store.ErrInvalidRegularPrice):
+		errorsByField["regular_price"] = "Regular price must be at least the bundle price."
+	case errors.Is(err, store.ErrInvalidBundlePrice):
+		if hasBundlePriceShape(in.Price) && strings.TrimSpace(in.RegularPrice) != "" {
+			errorsByField["regular_price"] = "Regular price must be a number with at most two decimal places."
+		} else {
+			errorsByField["price"] = "Bundle price must be greater than zero with at most two decimal places."
+		}
+	case errors.Is(err, store.ErrInvalidBundleMembership), errors.Is(err, store.ErrNotFound):
+		errorsByField["members"] = "Choose at least two different Items."
+	}
+	return errorsByField
+}
+
+func hasBundlePriceShape(raw string) bool {
+	parts := strings.Split(strings.TrimSpace(raw), ".")
+	if len(parts) > 2 || parts[0] == "" {
+		return false
+	}
+	if _, err := strconv.ParseInt(parts[0], 10, 64); err != nil {
+		return false
+	}
+	return len(parts) == 1 || (len(parts[1]) > 0 && len(parts[1]) <= 2)
 }
 
 // pathID reads a numeric path segment, writing a 404 if it is not a number.
@@ -855,6 +1381,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "Give the item a name.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidCategory):
 		http.Error(w, "Pick a category.", http.StatusBadRequest)
+	case errors.Is(err, errInvalidQty):
+		http.Error(w, "Qty must be a whole number greater than zero.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidStatus):
 		http.Error(w, "Unknown status.", http.StatusBadRequest)
 	case errors.Is(err, store.ErrInvalidBudget):
